@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/StaadPortalApp/StaadPortalApp.csproj" />
+    <Project Path="src/StaadPortalEngine/StaadPortalEngine.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/StaadPortalEngine.Tests/StaadPortalEngine.Tests.csproj" />
+  </Folder>
+</Solution>

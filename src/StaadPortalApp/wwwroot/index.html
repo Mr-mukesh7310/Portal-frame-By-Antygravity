@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STAAD.Pro 3D Parametric Portal Frame Modeler</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        :root {
+            --bg-primary: #121824;
+            --bg-secondary: #1a2232;
+            --bg-card: #222c3f;
+            --accent: #0084ff;
+            --accent-hover: #006dd1;
+            --success: #00b894;
+            --warning: #fdcb6e;
+            --danger: #d63031;
+            --text-main: #f1f2f6;
+            --text-muted: #a4b0be;
+            --border: #2f3a4e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 6px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+            gap: 8px;
+            min-height: 48px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.02rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .badge {
+            background: var(--accent);
+            color: #fff;
+            font-size: 0.68rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: nowrap;
+            flex-shrink: 0;
+        }
+
+        button {
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            font-size: 0.82rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        .btn-success {
+            background: var(--success);
+            color: #fff;
+        }
+        .btn-success:hover { filter: brightness(1.1); }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+        }
+        .btn-outline:hover { background: var(--bg-card); }
+
+        .btn-view {
+            background: rgba(34, 44, 63, 0.9);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 4px 8px;
+            font-size: 0.76rem;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+        .btn-view:hover { background: var(--accent); color: #fff; }
+
+        select, input[type="text"], input[type="number"] {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 5px 8px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            outline: none;
+        }
+        select:focus, input:focus { border-color: var(--accent); }
+
+        /* Main Workspace Layout */
+        .workspace {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            width: 100%;
+            height: calc(100vh - 49px);
+        }
+
+        /* Sidebar Controls - Responsive & Collapsible */
+        .sidebar {
+            width: clamp(295px, 23vw, 360px);
+            min-width: 295px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 12px;
+            z-index: 5;
+            flex-shrink: 0;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar.collapsed {
+            width: 0 !important;
+            min-width: 0 !important;
+            padding: 0 !important;
+            border-right: none !important;
+            overflow: hidden !important;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .section-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+
+        .section-title {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #74b9ff;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .input-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .input-row:last-child { margin-bottom: 0; }
+
+        .input-label {
+            font-size: 0.80rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .input-control {
+            width: clamp(125px, 10vw, 155px);
+            font-size: 0.82rem;
+            padding: 4px 8px;
+        }
+
+        .calc-badge {
+            font-size: 0.74rem;
+            background: rgba(0, 184, 148, 0.15);
+            color: #00cec9;
+            padding: 3px 6px;
+            border-radius: 4px;
+            margin-top: 3px;
+            display: block;
+            text-align: right;
+            font-weight: 600;
+        }
+
+        .calc-badge-info {
+            font-size: 0.72rem;
+            background: rgba(116, 185, 255, 0.12);
+            color: #74b9ff;
+            padding: 3px 6px;
+            border-radius: 4px;
+            margin-top: 3px;
+            display: block;
+            text-align: right;
+            font-weight: 500;
+        }
+
+        /* 3D Viewport */
+        .viewport-container {
+            flex: 1;
+            position: relative;
+            background: radial-gradient(circle at center, #1b263b 0%, #0d131f 100%);
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        #viewport3d {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* View Toolbar */
+        .view-toolbar {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            background: rgba(26, 34, 50, 0.85);
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            backdrop-filter: blur(8px);
+            z-index: 4;
+            max-width: calc(100vw - 360px);
+        }
+
+        /* Stats Overlay on Top Right */
+        .stats-overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: clamp(230px, 17vw, 290px);
+            background: rgba(26, 34, 50, 0.94);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 0.74rem;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            z-index: 4;
+            pointer-events: auto;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .stat-val {
+            font-weight: 700;
+            color: #00cec9;
+        }
+
+        /* Floating, Moveable & Resizable STAAD.Pro Command File Editor */
+        .staad-editor-panel {
+            position: fixed;
+            right: 14px;
+            bottom: 14px;
+            width: 380px;
+            height: 480px;
+            min-width: 280px;
+            min-height: 180px;
+            max-width: calc(100vw - 20px);
+            max-height: calc(100vh - 40px);
+            resize: both;
+            overflow: hidden;
+            background: rgba(18, 24, 36, 0.97);
+            backdrop-filter: blur(12px);
+            border: 1px solid #384860;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 32px rgba(0,0,0,0.75);
+            z-index: 100;
+            pointer-events: auto;
+        }
+        .staad-editor-panel:hover {
+            box-shadow: 0 12px 38px rgba(0,0,0,0.85);
+            border-color: #4b6584;
+        }
+
+        .staad-editor-header {
+            background: #1a2333;
+            border-bottom: 1px solid var(--border);
+            padding: 6px 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: grab;
+            user-select: none;
+            touch-action: none;
+            flex-shrink: 0;
+            gap: 6px;
+        }
+        .staad-editor-header:active {
+            cursor: grabbing;
+            background: #222d42;
+        }
+
+        .staad-editor-title {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #74b9ff;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            letter-spacing: 0.3px;
+        }
+
+        .editor-actions {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .btn-editor-action {
+            background: #253147;
+            border: 1px solid #384860;
+            color: var(--text-main);
+            padding: 3px 6px;
+            font-size: 0.72rem;
+            border-radius: 4px;
+            font-weight: 600;
+            white-space: nowrap;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .btn-editor-action:hover {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .staad-code-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            min-height: 0;
+        }
+
+        #staadEditorArea {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            background: #0d121c;
+            color: #55efc4;
+            border: none;
+            outline: none;
+            padding: 8px 10px;
+            font-family: "Consolas", "Cascadia Code", "Courier New", monospace;
+            font-size: 0.76rem;
+            line-height: 1.42;
+            resize: none;
+            white-space: pre;
+            overflow: auto;
+            tab-size: 4;
+        }
+
+        .legend-overlay {
+            position: absolute;
+            bottom: 16px;
+            left: 140px;
+            background: rgba(26, 34, 50, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 0.76rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px 14px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            z-index: 4;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+        }
+
+        /* STAAD.Pro Corner UCS Icon Box */
+        .ucs-container {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            width: 90px;
+            height: 90px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 6px;
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        #ucsCanvas {
+            width: 80px;
+            height: 80px;
+        }
+
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            font-weight: 600;
+            font-size: 0.9rem;
+            z-index: 1000;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        #toast.show { transform: translateX(-50%) translateY(0); }
+        #toast.success { border-color: var(--success); color: var(--success); }
+        #toast.error { border-color: var(--danger); color: var(--danger); }
+
+        /* Responsive Breakpoints for Laptop Screens */
+        @media (max-width: 1400px) {
+            .view-toolbar {
+                top: 8px;
+                left: 8px;
+                gap: 4px;
+                padding: 4px 6px;
+            }
+            .btn-view {
+                padding: 4px 8px;
+                font-size: 0.72rem;
+            }
+            .legend-overlay {
+                left: 105px;
+                bottom: 8px;
+                padding: 6px 8px;
+                font-size: 0.68rem;
+                gap: 3px 8px;
+            }
+            .ucs-container {
+                bottom: 8px;
+                left: 8px;
+                width: 80px;
+                height: 80px;
+            }
+            #ucsCanvas {
+                width: 70px;
+                height: 70px;
+            }
+        }
+
+        @media (max-width: 1200px) {
+            header {
+                padding: 6px 12px;
+                gap: 6px;
+            }
+            .logo {
+                font-size: 0.98rem;
+                gap: 6px;
+            }
+            .header-actions {
+                gap: 6px;
+            }
+            button {
+                padding: 6px 10px;
+                font-size: 0.78rem;
+            }
+            .legend-overlay {
+                display: none; /* Hide legend on compact laptop view so 3D model is 100% visible */
+            }
+            .stats-overlay {
+                width: 250px;
+                font-size: 0.70rem;
+                padding: 6px 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">
+            <button id="btnToggleSidebar" class="btn-outline" onclick="toggleSidebar()" title="Toggle Controls Sidebar" style="border-color: #74b9ff; color: #74b9ff; padding: 4px 8px; font-size: 0.80rem;">
+                ◀ Controls
+            </button>
+            <span>🏗️ STAAD.Pro 3D Portal Modeler</span>
+            <span class="badge">OpenSTAAD Ready</span>
+        </div>
+        <div class="header-actions">
+            <label style="font-size: 0.82rem; color: var(--text-muted);">Preset:</label>
+            <select id="presetSelect" onchange="loadPreset(this.value)">
+                <option value="SingleGableWarehouse">Industrial Shed (50m | 1@6.5+10@7+1@6.5)</option>
+                <option value="TwinSpanIndustrialShed">Twin Span Multi-Gable Shed (2x18m = 36m)</option>
+                <option value="FactoryWithMezzanine">Heavy Factory with Mezzanine</option>
+            </select>
+            <button id="btnToggleCmdFile" class="btn-outline" onclick="toggleCommandFileWindow()" title="Show/Hide STAAD.Pro Command File (.std) Editor" style="border-color: #00cec9; color: #00cec9;">
+                📝 Command File: <span id="cmdFileStatusBadge" style="font-weight: 700;">ON</span>
+            </button>
+            <button class="btn-primary" onclick="exportStdFile()">
+                📥 Export .std File
+            </button>
+            <button class="btn-success" onclick="pushToOpenStaad()">
+                🚀 Push to STAAD.Pro
+            </button>
+        </div>
+    </header>
+
+    <div class="workspace">
+        <!-- Sidebar Controls -->
+        <div class="sidebar" id="sidebarPanel">
+            
+            <!-- 1. Primary Frame Dimensions -->
+            <div class="section-box">
+                <div class="section-title">1. Primary Frame Dimensions</div>
+                
+                <div class="input-row">
+                    <span class="input-label">Span Selection:</span>
+                    <select id="spanMode" class="input-control" onchange="onSpanModeChange(this.value)">
+                        <option value="1" selected>1 (Single Gable)</option>
+                        <option value="2">2 (Twin Span Gable)</option>
+                        <option value="custom">Custom (Multi-Span)</option>
+                    </select>
+                </div>
+
+                <div class="input-row" id="singleSpanRow">
+                    <span class="input-label">Span Width (X) [m]:</span>
+                    <input type="number" id="spanWidth" class="input-control" value="50.0" step="0.5" oninput="updateModel()">
+                </div>
+
+                <div class="input-row" id="customSpanRow" style="display: none;">
+                    <span class="input-label">Custom Spans [m]:</span>
+                    <input type="text" id="customSpanList" class="input-control" value="25.0, 25.0" oninput="updateModel()" placeholder="e.g. 25, 25">
+                </div>
+
+                <div class="input-row">
+                    <span class="input-label">Eave Height (Y) [m]:</span>
+                    <input type="number" id="eaveHeight" class="input-control" value="15.0" step="0.5" oninput="updateModel()">
+                </div>
+
+                <div class="input-row">
+                    <span class="input-label">Roof Slope (1 in N):</span>
+                    <input type="number" id="roofSlope" class="input-control" value="5" step="0.5" min="1" max="50" oninput="updateModel()" placeholder="e.g. 5 for 1:5">
+                </div>
+
+                <div class="calc-badge" id="calcRidgeBadge">
+                    📐 Calculated Ridge Height: 20.00 m (Rise: 5.00 m)
+                </div>
+            </div>
+
+            <!-- 2. Longitudinal Bays (Z) & RCC Wall -->
+            <div class="section-box">
+                <div class="section-title">2. Longitudinal Bays (Z) & RCC Wall</div>
+
+                <div class="input-row">
+                    <span class="input-label">Width Modules (X) [m]:</span>
+                    <input type="text" id="widthModules" class="input-control" value="3" oninput="updateModel()" placeholder="e.g. 3 or 3@16.67">
+                </div>
+                <div class="calc-badge-info" id="widthModuleBadge">
+                    📐 Intermediate Columns at X = 16.7m, 33.3m (2 Columns)
+                </div>
+
+                <div class="input-row" style="margin-top: 8px;">
+                    <span class="input-label">Bay Spacing List (Z) [m]:</span>
+                    <input type="text" id="baySpacings" class="input-control" value="1@6.5+10@7+1@6.5" oninput="updateModel()" placeholder="e.g. 1@6.5+10@7+1@6.5">
+                </div>
+                <div class="calc-badge-info" id="baySummaryBadge">
+                    📏 12 Bays: 1@6.5+10@7+1@6.5 (Length: 83.0m)
+                </div>
+
+                <div class="input-row" style="margin-top: 8px;">
+                    <span class="input-label">RCC Wall Height [m]:</span>
+                    <input type="number" id="rccWallHeight" class="input-control" value="3.0" step="0.1" min="0" oninput="updateModel()">
+                </div>
+
+                <div class="input-row">
+                    <span class="input-label">Gable Posts (Front Z=83):</span>
+                    <input type="text" id="gablePostsFront" class="input-control" value="3" oninput="updateModel()" placeholder="e.g. 3 or 4@12.5">
+                </div>
+                <div class="calc-badge-info" id="gableFrontBadge">
+                    📍 Front Posts at X = 16.7m, 33.3m (2 Posts)
+                </div>
+
+                <div class="input-row" style="margin-top: 6px;">
+                    <span class="input-label">Gable Posts (Rear Z=0):</span>
+                    <input type="text" id="gablePostsRear" class="input-control" value="3" oninput="updateModel()" placeholder="e.g. 3 or 4@12.5">
+                </div>
+                <div class="calc-badge-info" id="gableRearBadge">
+                    📍 Rear Posts at X = 16.7m, 33.3m (2 Posts)
+                </div>
+
+                <!-- Jack Portal / Intermediate Column Layout Option -->
+                <div class="input-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                    <span class="input-label">Jack Portal (Interior):</span>
+                    <input type="checkbox" id="enableJackPortal" checked onchange="toggleJackPortalUI(); updateModel()">
+                </div>
+                <div id="jackPortalInputs" style="display: block;">
+                    <div class="input-row">
+                        <span class="input-label">Int. Col Spacing (Z):</span>
+                        <input type="text" id="intermediateColumnSpacing" class="input-control" value="1@6.5+5@14+1@6.5" oninput="updateModel()" placeholder="e.g. 1@6.5+5@14+1@6.5">
+                    </div>
+                    <div class="calc-badge-info" id="jackColSummaryBadge">
+                        🏛️ Int. Columns at Z = 83.0m, 76.5m, 62.5m, 48.5m, 34.5m, 20.5m, 6.5m, 0.0m (8 Columns - Front to Rear)
+                    </div>
+                </div>
+
+                <div class="input-row" style="margin-top: 6px;">
+                    <span class="input-label">Show 3D Concrete Wall:</span>
+                    <input type="checkbox" id="showRccMesh" checked onchange="updateModel()">
+                </div>
+            </div>
+
+            <!-- 3. Cable Tray System -->
+            <div class="section-box">
+                <div class="section-title">3. Cable Tray System</div>
+                
+                <div class="input-row">
+                    <span class="input-label">Enable Cable Tray:</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <select id="cableTrayLocation" class="input-control" style="width: 175px; font-size: 0.76rem; padding: 4px 6px;" onchange="updateModel()">
+                            <option value="side">Side Wall</option>
+                            <option value="side_intermediate" selected>Side Wall + Intermediate</option>
+                            <option value="all">Side Wall + Intermediate + Gable</option>
+                        </select>
+                        <input type="checkbox" id="cableTrayEnabled" onchange="updateModel()">
+                    </div>
+                </div>
+
+                <div class="input-row">
+                    <span class="input-label">Cable Tray Height [m]:</span>
+                    <input type="number" id="cableTrayHeight" class="input-control" value="5.0" step="0.2" oninput="updateModel()">
+                </div>
+                <div class="input-row">
+                    <span class="input-label">Cable Tray Projection [m]:</span>
+                    <input type="number" id="cableTrayLength" class="input-control" value="0.8" step="0.1" oninput="updateModel()">
+                </div>
+            </div>
+
+            <!-- 4. Bracing System -->
+            <div class="section-box">
+                <div class="section-title">4. Bracing Layout</div>
+                <div class="input-row">
+                    <span class="input-label">Roof X-Bracing:</span>
+                    <input type="checkbox" id="roofBracing" checked onchange="updateModel()">
+                </div>
+                <div class="input-row">
+                    <span class="input-label">Wall X-Bracing:</span>
+                    <input type="checkbox" id="wallBracing" checked onchange="updateModel()">
+                </div>
+                <div class="input-row">
+                    <span class="input-label">Max Brace Length [m]:</span>
+                    <input type="number" id="maxBraceLength" class="input-control" value="12.5" step="0.5" min="6.0" max="25.0" oninput="updateModel()">
+                </div>
+                <div class="input-row">
+                    <span class="input-label">Braced Bays (0-idx):</span>
+                    <input type="text" id="bracedBays" class="input-control" value="0, 5, 11" oninput="updateModel()" placeholder="e.g. 0, 5, 11">
+                </div>
+
+                <div class="input-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                    <span class="input-label">Portal Bracing:</span>
+                    <input type="checkbox" id="portalBracing" onchange="togglePortalBracingUI(); updateModel()">
+                </div>
+                <div id="portalBracingInputs" style="display: none;">
+                    <div class="input-row">
+                        <span class="input-label">Portal Height [m]:</span>
+                        <input type="number" id="portalHeight" class="input-control" value="4.5" step="0.2" min="2.0" max="15.0" oninput="updateModel()">
+                    </div>
+                    <div class="input-row">
+                        <span class="input-label">Portal Leg Offset [m]:</span>
+                        <input type="number" id="portalLegOffset" class="input-control" value="0.5" step="0.05" min="0.1" max="2.0" oninput="updateModel()">
+                    </div>
+                    <div class="input-row">
+                        <span class="input-label">Portal Bays (0-idx):</span>
+                        <input type="text" id="portalBays" class="input-control" value="2" oninput="updateModel()" placeholder="e.g. 2 or 1, 2">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. Mezzanine System -->
+            <div class="section-box">
+                <div class="section-title">5. Mezzanine Floor</div>
+                <div class="input-row">
+                    <span class="input-label">Enable Mezzanine:</span>
+                    <input type="checkbox" id="mezzanineEnabled" onchange="updateModel()">
+                </div>
+                <div class="input-row">
+                    <span class="input-label">Floor Height [m]:</span>
+                    <input type="number" id="mezzanineHeight" class="input-control" value="3.8" step="0.2" oninput="updateModel()">
+                </div>
+                <div class="input-row">
+                    <span class="input-label">Floor Width [m]:</span>
+                    <input type="number" id="mezzanineWidth" class="input-control" value="10.0" step="0.5" oninput="updateModel()">
+                </div>
+                <div class="input-row">
+                    <span class="input-label">Mezzanine Bays:</span>
+                    <input type="text" id="mezzanineBays" class="input-control" value="0, 1" oninput="updateModel()">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 3D Canvas Viewport -->
+        <div class="viewport-container">
+            <div id="viewport3d"></div>
+
+            <!-- View Orientation Toolbar -->
+            <div class="view-toolbar">
+                <button class="btn-view" onclick="fitCamera()" title="Auto-Fit entire frame in view" style="background:#00cec9; color:#121824; font-weight:700;">⛶ Auto-Fit</button>
+                <button class="btn-view" onclick="setView('iso')">🧭 STAAD Isometric</button>
+                <button class="btn-view" onclick="setView('front')">📐 Front Gable</button>
+                <button class="btn-view" onclick="setView('rear')">🏠 Rear Gable</button>
+                <button class="btn-view" onclick="setView('left')">🏢 Left Wall (X=0)</button>
+                <button class="btn-view" onclick="setView('right')">🏢 Right Wall (X=W)</button>
+                <button class="btn-view" onclick="setView('top')">🗺️ Top Plan (XZ)</button>
+            </div>
+
+            <!-- Stats Overlay on Top Right -->
+            <div class="stats-overlay" id="statsOverlay">
+                <div class="stat-item"><span>Total Nodes:</span> <span class="stat-val" id="statNodes">0</span></div>
+                <div class="stat-item"><span>Total Members:</span> <span class="stat-val" id="statBeams">0</span></div>
+                <div class="stat-item"><span>Width (X) x Length (Z):</span> <span class="stat-val" id="statFootprint">0m x 0m</span></div>
+                <div class="stat-item"><span>Height (Y Eave/Ridge):</span> <span class="stat-val" id="statHeight">0m / 0m</span></div>
+                <div class="stat-item"><span>RCC Wall Level:</span> <span class="stat-val" id="statRcc">0m</span></div>
+                <div class="stat-item"><span>Base Supports:</span> <span class="stat-val" id="statSupports">0</span></div>
+                <div class="stat-item"><span>Release Dots (My Mz):</span> <span class="stat-val" id="statReleases" style="color: #ff1493; font-weight: 700;">0</span></div>
+            </div>
+
+            <!-- Corner UCS (User Coordinate System) Icon (STAAD.Pro style) -->
+            <div class="ucs-container">
+                <canvas id="ucsCanvas"></canvas>
+            </div>
+
+            <!-- Member Color Legend -->
+            <div class="legend-overlay">
+                <div class="legend-item"><div class="legend-color" style="background:#e74c3c; width:12px; height:8px; border-radius:2px;"></div><span>Fixed Base (Side Walls)</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#f39c12; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:10px solid #f39c12; background:transparent;"></div><span>Pinned Base (Interm / Gable)</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#00a8ff"></div><span>Exterior Columns</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#00cec9"></div><span>Intermediate / Valley Cols</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#ff7675"></div><span>Rafters</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#2ecc71"></div><span>Eave/Ridge Struts</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#f1c40f"></div><span>X-Bracings</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#e74c3c"></div><span>Cable Tray Brackets</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#0984e3"></div><span>Gable Posts</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#1abc9c"></div><span>Portal Bracing</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#9b59b6"></div><span>Mezzanine</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating, Moveable & Resizable STAAD.Pro Command File Editor Window (Body Level) -->
+    <div class="staad-editor-panel" id="staadEditorPanel">
+        <div class="staad-editor-header" id="staadEditorHeader" title="Drag to move anywhere on screen">
+            <div class="staad-editor-title">
+                <span>📝 STAAD Editor</span>
+            </div>
+            <div class="editor-actions">
+                <button class="btn-editor-action" onclick="copyStaadCode()" title="Copy STAAD commands">📋 Copy</button>
+                <button class="btn-editor-action" onclick="resetStaadEditor()" title="Reset to auto-generated script">🔄 Reset</button>
+                <button class="btn-editor-action" onclick="exportStdFile()" title="Download .std file">⬇️ Save</button>
+                <button class="btn-editor-action" id="btnToggleEditor" onclick="toggleEditorSize()" title="Toggle full height">⛶</button>
+                <button class="btn-editor-action" onclick="toggleCommandFileWindow(false)" title="Hide Editor window" style="color: #ff7675; font-weight:700; font-size:0.85rem; padding: 2px 7px;">✕</button>
+            </div>
+        </div>
+        <div class="staad-code-container">
+            <textarea id="staadEditorArea" spellcheck="false" placeholder="STAAD.Pro Command File editor..." oninput="onStaadEditorInput()"></textarea>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+        const MEMBER_COLORS = {
+            'Column': 0x00a8ff,
+            'IntermediateColumn': 0x00cec9,
+            'Rafter': 0xff7675,
+            'EaveStrut': 0x2ecc71,
+            'RidgeStrut': 0x27ae60,
+            'GablePost': 0x0984e3,
+            'RoofBracing': 0xf1c40f,
+            'WallBracing': 0xf39c12,
+            'PortalBeam': 0x1abc9c,
+            'PortalKneeBrace': 0x16a085,
+            'CableTrayBracket': 0xd63031,
+            'CableTrayRunner': 0xe74c3c,
+            'CraneCorbel': 0xd63031,
+            'CraneRunwayBeam': 0xe74c3c,
+            'MezzanineMainBeam': 0x9b59b6,
+            'MezzanineSecondaryBeam': 0x8e44ad,
+            'MezzanineColumn': 0xbe2edd,
+            'JackBeam': 0xffa502,
+            'JackTieBeam': 0x2ed573
+        };
+
+        let scene, camera, renderer, controls;
+        let ucsScene, ucsCamera, ucsRenderer;
+        let modelGroup = new THREE.Group();
+        let rccMeshGroup = new THREE.Group();
+        let labelGroup = new THREE.Group();
+        let gridHelper = null;
+        let updateTimeout = null;
+
+        let currentWidth = 24.0;
+        let currentLength = 50.0;
+        let currentHeight = 8.2;
+        let currentStdText = "";
+        let isEditorExpanded = false;
+
+        function init3D() {
+            const container = document.getElementById('viewport3d');
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            dirLight.position.set(50, 100, 50);
+            scene.add(dirLight);
+
+            gridHelper = new THREE.GridHelper(160, 80, 0x2f3a4e, 0x1a2232);
+            gridHelper.position.y = -0.01;
+            scene.add(gridHelper);
+
+            scene.add(modelGroup);
+            scene.add(rccMeshGroup);
+            scene.add(labelGroup);
+
+            initUcs();
+
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function initUcs() {
+            const ucsCanvas = document.getElementById('ucsCanvas');
+            ucsScene = new THREE.Scene();
+            ucsCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 50);
+            ucsCamera.position.set(0, 0, 4);
+
+            ucsRenderer = new THREE.WebGLRenderer({ canvas: ucsCanvas, alpha: true, antialias: true });
+            ucsRenderer.setSize(100, 100);
+            ucsRenderer.setPixelRatio(window.devicePixelRatio);
+
+            const origin = new THREE.Vector3(0, 0, 0);
+            const len = 1.35;
+            const headLen = 0.4;
+            const headW = 0.22;
+
+            const arrowX = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), origin, len, 0xff4757, headLen, headW);
+            const arrowY = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), origin, len, 0x2ed573, headLen, headW);
+            const arrowZ = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), origin, len, 0x1e90ff, headLen, headW);
+
+            ucsScene.add(arrowX);
+            ucsScene.add(arrowY);
+            ucsScene.add(arrowZ);
+
+            addUcsLabel(ucsScene, "X", new THREE.Vector3(1.7, 0, 0), "#ff4757");
+            addUcsLabel(ucsScene, "Y", new THREE.Vector3(0, 1.7, 0), "#2ed573");
+            addUcsLabel(ucsScene, "Z", new THREE.Vector3(0, 0, 1.7), "#1e90ff");
+        }
+
+        function addUcsLabel(sceneTarget, text, pos, color) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color;
+            ctx.font = 'Bold 44px Segoe UI, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 32, 32);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.position.copy(pos);
+            sprite.scale.set(0.65, 0.65, 0.65);
+            sceneTarget.add(sprite);
+        }
+
+        function addSceneBadge(text, pos, bgColor, textColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 240;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = bgColor || "rgba(26, 34, 50, 0.85)";
+            ctx.beginPath();
+            ctx.roundRect(4, 4, 232, 56, 12);
+            ctx.fill();
+            ctx.strokeStyle = "#485460";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = textColor || "#00cec9";
+            ctx.font = 'Bold 22px Segoe UI, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 120, 32);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.position.copy(pos);
+            sprite.scale.set(4.0, 1.1, 1.0);
+            labelGroup.add(sprite);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+
+            if (ucsCamera && controls) {
+                ucsCamera.position.copy(camera.position).sub(controls.target).normalize().multiplyScalar(3.8);
+                ucsCamera.lookAt(0, 0, 0);
+                ucsRenderer.render(ucsScene, ucsCamera);
+            }
+        }
+
+        function setView(viewType) {
+            viewType = viewType || 'iso';
+            const cx = currentWidth / 2.0;
+            const cy = currentHeight / 3.0;
+            const cz = currentLength / 2.0;
+            controls.target.set(cx, cy, cz);
+
+            const container = document.getElementById('viewport3d');
+            const w = (container && container.clientWidth > 50) ? container.clientWidth : window.innerWidth;
+            const h = (container && container.clientHeight > 50) ? container.clientHeight : window.innerHeight;
+            const aspect = w / Math.max(1, h);
+
+            // Responsive Aspect Ratio Compensation for Laptop Screens:
+            // When viewport is narrow (e.g. sidebar or right editor open on laptop),
+            // increase camera distance to prevent left & right building edges from clipping!
+            const aspectCorr = aspect < 1.65 ? (1.60 / Math.max(0.55, aspect)) : 1.0;
+            const maxDim = Math.max(currentWidth, currentLength, currentHeight);
+            const dist = maxDim * 1.45 * aspectCorr;
+
+            if (viewType === 'iso') {
+                camera.position.set(cx + dist * 0.72, cy + dist * 0.68, cz + dist * 0.72);
+            } else if (viewType === 'front') {
+                camera.position.set(cx, cy, cz + dist * 1.35);
+            } else if (viewType === 'rear') {
+                camera.position.set(cx, cy, cz - dist * 1.35);
+            } else if (viewType === 'left') {
+                camera.position.set(cx - dist * 1.35, cy, cz);
+            } else if (viewType === 'right') {
+                camera.position.set(cx + dist * 1.35, cy, cz);
+            } else if (viewType === 'top') {
+                camera.position.set(cx, cy + dist * 1.6, cz + 0.001);
+            }
+
+            camera.lookAt(cx, cy, cz);
+            controls.update();
+        }
+
+        function fitCamera() {
+            setView('iso');
+            showToast("⛶ Camera auto-fitted to screen", "success");
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('viewport3d');
+            if (!container || !renderer || !camera) return;
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            if (w <= 0 || h <= 0) return;
+
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+
+            if (ucsRenderer) {
+                ucsRenderer.setSize(80, 80);
+            }
+        }
+
+        function onSpanModeChange(mode) {
+            const singleRow = document.getElementById('singleSpanRow');
+            const customRow = document.getElementById('customSpanRow');
+
+            if (mode === 'custom') {
+                singleRow.style.display = 'none';
+                customRow.style.display = 'flex';
+            } else {
+                singleRow.style.display = 'flex';
+                customRow.style.display = 'none';
+            }
+            updateModel();
+        }
+
+        function parseBayExpression(input) {
+            const result = [];
+            if (!input || !input.trim()) return [24.0];
+
+            const tokens = input.split(/[+,;]+/);
+            for (const rawToken of tokens) {
+                const t = rawToken.trim();
+                if (t.includes('@') || t.includes('*') || t.includes('x') || t.includes('X')) {
+                    const sep = t.includes('@') ? '@' : (t.includes('*') ? '*' : (t.includes('x') ? 'x' : 'X'));
+                    const parts = t.split(sep);
+                    if (parts.length === 2) {
+                        const count = parseInt(parts[0].trim());
+                        const spacing = parseFloat(parts[1].trim());
+                        if (!isNaN(count) && !isNaN(spacing) && count > 0 && spacing > 0) {
+                            for (let i = 0; i < count; i++) result.push(spacing);
+                        }
+                    }
+                } else {
+                    const val = parseFloat(t);
+                    if (!isNaN(val) && val > 0) result.push(val);
+                }
+            }
+            return result.length > 0 ? result : [24.0];
+        }
+
+        function parseGableOffsets(input, totalW) {
+            if (!input || !input.trim()) return [];
+            const t = input.trim();
+            if (!isNaN(parseInt(t)) && !t.includes('@') && !t.includes('*') && !t.includes('+') && !t.includes(',')) {
+                const count = parseInt(t);
+                if (count <= 0) return [];
+                const spacing = totalW / (count + 1);
+                const list = [];
+                for (let i = 1; i <= count; i++) list.push(parseFloat((i * spacing).toFixed(2)));
+                return list;
+            }
+
+            const bayList = parseBayExpression(input);
+            const offsets = [];
+            let currX = 0.0;
+            for (let i = 0; i < bayList.length; i++) {
+                currX += bayList[i];
+                if (currX < totalW - 0.01) {
+                    offsets.push(parseFloat(currX.toFixed(2)));
+                }
+            }
+            return offsets;
+        }
+
+        function getConfigFromUI() {
+            const spanMode = document.getElementById('spanMode').value;
+            const eaveHeight = parseFloat(document.getElementById('eaveHeight').value) || 7.0;
+            const slopeRatio = parseFloat(document.getElementById('roofSlope').value) || 10.0;
+
+            const spans = [];
+
+            if (spanMode === 'custom') {
+                const customSpans = parseBayExpression(document.getElementById('customSpanList').value);
+                const spanList = customSpans.length > 0 ? customSpans : [18.0, 18.0, 18.0];
+                spanList.forEach(w => {
+                    spans.push({
+                        spanWidth: w,
+                        eaveHeightLeft: eaveHeight,
+                        eaveHeightRight: eaveHeight,
+                        roofSlopeRatio: slopeRatio
+                    });
+                });
+            } else {
+                const numSpans = parseInt(spanMode) || 1;
+                const spanWidth = parseFloat(document.getElementById('spanWidth').value) || 24.0;
+                for (let s = 0; s < numSpans; s++) {
+                    spans.push({
+                        spanWidth: spanWidth,
+                        eaveHeightLeft: eaveHeight,
+                        eaveHeightRight: eaveHeight,
+                        roofSlopeRatio: slopeRatio
+                    });
+                }
+            }
+
+            const totalW = spans.reduce((sum, s) => sum + s.spanWidth, 0);
+
+            const firstSpan = spans[0];
+            const halfSpan = firstSpan.spanWidth / 2.0;
+            const rise = halfSpan / (firstSpan.roofSlopeRatio || 10.0);
+            const calculatedRidge = firstSpan.eaveHeightLeft + rise;
+            document.getElementById('calcRidgeBadge').innerText = 
+                `📐 Calculated Ridge Height: ${calculatedRidge.toFixed(2)} m (Rise: ${rise.toFixed(2)} m per Span)`;
+
+            // Width Modules in Section 2
+            const widthModExpr = document.getElementById('widthModules').value;
+            const modOffsets = parseGableOffsets(widthModExpr, totalW);
+            if (modOffsets.length > 0) {
+                document.getElementById('widthModuleBadge').innerText = 
+                    `📐 Intermediate Columns at X = ${modOffsets.map(x => x.toFixed(1) + 'm').join(', ')} (${modOffsets.length} Column${modOffsets.length > 1 ? 's' : ''})`;
+            } else {
+                document.getElementById('widthModuleBadge').innerText = 
+                    `📐 Clear Span (No Intermediate Columns)`;
+            }
+
+            const baySpacings = parseBayExpression(document.getElementById('baySpacings').value);
+            const totalBayLen = baySpacings.reduce((a, b) => a + b, 0);
+            document.getElementById('baySummaryBadge').innerText = 
+                `📏 ${baySpacings.length} Bays: ${document.getElementById('baySpacings').value} (Length: ${totalBayLen.toFixed(1)}m)`;
+
+            // Live Gable Posts Offsets Badges
+            const frontExpr = document.getElementById('gablePostsFront').value;
+            const frontOffsets = parseGableOffsets(frontExpr, totalW);
+            document.getElementById('gableFrontBadge').innerText = 
+                frontOffsets.length > 0 
+                ? `📍 Front Posts at X = ${frontOffsets.map(x => x.toFixed(1) + 'm').join(', ')} (${frontOffsets.length} Posts)`
+                : `📍 No front gable posts`;
+
+            const rearExpr = document.getElementById('gablePostsRear').value;
+            const rearOffsets = parseGableOffsets(rearExpr, totalW);
+            document.getElementById('gableRearBadge').innerText = 
+                rearOffsets.length > 0 
+                ? `📍 Rear Posts at X = ${rearOffsets.map(x => x.toFixed(1) + 'm').join(', ')} (${rearOffsets.length} Posts)`
+                : `📍 No rear gable posts`;
+
+            const bracedBays = document.getElementById('bracedBays').value
+                .split(/[+,;,\s]+/)
+                .map(v => parseInt(v.trim()))
+                .filter(v => !isNaN(v));
+
+            const portalBays = document.getElementById('portalBays').value
+                .split(/[+,;,\s]+/)
+                .map(v => parseInt(v.trim()))
+                .filter(v => !isNaN(v));
+
+            const mezzanineBays = document.getElementById('mezzanineBays').value
+                .split(/[+,;,\s]+/)
+                .map(v => parseInt(v.trim()))
+                .filter(v => !isNaN(v));
+
+            // Jack Portal (Interior Intermediate Columns)
+            const isJackEnabled = document.getElementById('enableJackPortal').checked;
+            const jackExpr = document.getElementById('intermediateColumnSpacing').value;
+            let jackSpacings = [];
+            if (isJackEnabled && jackExpr) {
+                jackSpacings = parseBayExpression(jackExpr);
+                let currentZ = totalBayLen;
+                let zList = [totalBayLen];
+                jackSpacings.forEach(s => {
+                    currentZ -= s;
+                    if (currentZ > 0.05) zList.push(Math.round(currentZ * 100) / 100);
+                });
+                if (!zList.some(z => Math.abs(z) < 0.05)) zList.push(0);
+                document.getElementById('jackColSummaryBadge').innerText = 
+                    `🏛️ Int. Columns at Z = ${zList.map(z => z.toFixed(1) + 'm').join(', ')} (${zList.length} Columns - Front to Rear)`;
+            }
+
+            return {
+                modelName: "Parametric 3D Industrial Shed",
+                frameType: spans.length > 1 ? 1 : 0,
+                spanMode: spanMode,
+                spans: spans,
+                widthModuleExpression: widthModExpr,
+                baySpacingExpression: document.getElementById('baySpacings').value,
+                baySpacings: baySpacings,
+                rccWallHeight: parseFloat(document.getElementById('rccWallHeight').value) || 0.0,
+                gableWalls: {
+                    gableBaySpacingFront: document.getElementById('gablePostsFront').value,
+                    gableBaySpacingRear: document.getElementById('gablePostsRear').value
+                },
+                cableTray: {
+                    enabled: document.getElementById('cableTrayEnabled').checked,
+                    location: document.getElementById('cableTrayLocation').value,
+                    bracketHeight: parseFloat(document.getElementById('cableTrayHeight').value) || 5.0,
+                    bracketLength: parseFloat(document.getElementById('cableTrayLength').value) || 0.8,
+                    onLeftExteriorColumn: true,
+                    onRightExteriorColumn: true,
+                    onInteriorColumns: true
+                },
+                bracing: {
+                    includeRoofBracing: document.getElementById('roofBracing').checked,
+                    includeWallBracing: document.getElementById('wallBracing').checked,
+                    maxBraceLength: parseFloat(document.getElementById('maxBraceLength').value) || 12.5,
+                    type: 0,
+                    bracedBayIndices: bracedBays,
+                    enablePortalBracing: document.getElementById('portalBracing').checked,
+                    portalBracingHeight: parseFloat(document.getElementById('portalHeight').value) || 4.5,
+                    portalLegOffset: parseFloat(document.getElementById('portalLegOffset')?.value) || 0.5,
+                    portalBracedBayIndices: portalBays
+                },
+                mezzanine: {
+                    enabled: document.getElementById('mezzanineEnabled').checked,
+                    floorHeight: parseFloat(document.getElementById('mezzanineHeight').value) || 3.5,
+                    startX: 0.0,
+                    endX: parseFloat(document.getElementById('mezzanineWidth').value) || 10.0,
+                    bayIndices: mezzanineBays,
+                    joistSpacing: 1.5
+                },
+                jackPortal: {
+                    enabled: isJackEnabled,
+                    intermediateBaySpacingExpression: jackExpr,
+                    intermediateBaySpacings: jackSpacings
+                }
+            };
+        }
+
+        function toggleJackPortalUI() {
+            const enabled = document.getElementById('enableJackPortal').checked;
+            document.getElementById('jackPortalInputs').style.display = enabled ? 'block' : 'none';
+        }
+
+        function togglePortalBracingUI() {
+            const enabled = document.getElementById('portalBracing').checked;
+            document.getElementById('portalBracingInputs').style.display = enabled ? 'block' : 'none';
+        }
+
+        async function updateModel() {
+            if (updateTimeout) clearTimeout(updateTimeout);
+            updateTimeout = setTimeout(fetchAndRenderModel, 100);
+        }
+
+        let isInitialLoad = true;
+
+        async function fetchAndRenderModel() {
+            const config = getConfigFromUI();
+
+            try {
+                const res = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                if (!res.ok) throw new Error("Failed to generate model");
+                const data = await res.json();
+                
+                currentWidth = data.stats.totalWidth;
+                currentLength = data.stats.totalLength;
+                currentHeight = data.stats.maxHeight;
+
+                if (gridHelper) {
+                    gridHelper.position.set(currentWidth / 2.0, -0.01, currentLength / 2.0);
+                }
+
+                render3DGeometry(data, config);
+                updateStats(data.stats, config, data);
+
+                // Update Live STAAD.Pro Command File Textarea
+                if (data.stdText) {
+                    currentStdText = data.stdText;
+                    if (!isEditorUserModified || document.activeElement !== document.getElementById('staadEditorArea')) {
+                        document.getElementById('staadEditorArea').value = data.stdText;
+                        isEditorUserModified = false;
+                    }
+                }
+
+                if (isInitialLoad) {
+                    setView('iso');
+                    isInitialLoad = false;
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function render3DGeometry(data, config) {
+            while (modelGroup.children.length > 0) {
+                const obj = modelGroup.children[0];
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+                modelGroup.remove(obj);
+            }
+
+            while (rccMeshGroup.children.length > 0) {
+                const obj = rccMeshGroup.children[0];
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+                rccMeshGroup.remove(obj);
+            }
+
+            while (labelGroup.children.length > 0) {
+                const obj = labelGroup.children[0];
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+                labelGroup.remove(obj);
+            }
+
+            const nodeMap = new Map();
+            data.nodes.forEach(n => nodeMap.set(n.id, n));
+
+            // 1. Render Member Lines
+            const beamsByType = {};
+            data.beams.forEach(b => {
+                const typeName = getMemberTypeName(b.type);
+                if (!beamsByType[typeName]) beamsByType[typeName] = [];
+                beamsByType[typeName].push(b);
+            });
+
+            for (const [typeName, beams] of Object.entries(beamsByType)) {
+                const positions = [];
+                beams.forEach(b => {
+                    const nA = nodeMap.get(b.nodeA);
+                    const nB = nodeMap.get(b.nodeB);
+                    if (nA && nB) {
+                        positions.push(nA.x, nA.y, nA.z);
+                        positions.push(nB.x, nB.y, nB.z);
+                    }
+                });
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+                const color = MEMBER_COLORS[typeName] || 0xffffff;
+                const material = new THREE.LineBasicMaterial({
+                    color: color,
+                    linewidth: (typeName === 'Column' || typeName === 'IntermediateColumn' || typeName === 'Rafter') ? 2 : 1
+                });
+
+                const lineSegments = new THREE.LineSegments(geometry, material);
+                modelGroup.add(lineSegments);
+            }
+
+            // 2. Render High-Contrast Highlight Dots at EVERY Node
+            const allNodePositions = [];
+            data.nodes.forEach(n => {
+                allNodePositions.push(n.x, n.y, n.z);
+            });
+            const allNodesGeo = new THREE.BufferGeometry();
+            allNodesGeo.setAttribute('position', new THREE.Float32BufferAttribute(allNodePositions, 3));
+            
+            const allNodesMat = new THREE.PointsMaterial({
+                color: 0x00cec9,
+                size: 6.0,
+                sizeAttenuation: false
+            });
+            const nodePoints = new THREE.Points(allNodesGeo, allNodesMat);
+            modelGroup.add(nodePoints);
+
+            // 3. Render Base Support Markers (Fixed = Red Pedestal Block, Pinned = Amber Inverted Cone)
+            const fixedBaseGeo = new THREE.BoxGeometry(0.5, 0.22, 0.5);
+            const fixedBaseMat = new THREE.MeshLambertMaterial({ color: 0xe74c3c });
+
+            const pinnedBaseGeo = new THREE.ConeGeometry(0.3, 0.45, 8);
+            const pinnedBaseMat = new THREE.MeshLambertMaterial({ color: 0xf39c12 });
+
+            const fixedSet = new Set(data.fixedBaseNodes || []);
+            const pinnedSet = new Set(data.pinnedBaseNodes || []);
+
+            data.baseNodes.forEach(nid => {
+                const n = nodeMap.get(nid);
+                if (n) {
+                    if (fixedSet.has(nid)) {
+                        const fixedMesh = new THREE.Mesh(fixedBaseGeo, fixedBaseMat);
+                        fixedMesh.position.set(n.x, 0.11, n.z);
+                        modelGroup.add(fixedMesh);
+                    } else {
+                        const pinnedMesh = new THREE.Mesh(pinnedBaseGeo, pinnedBaseMat);
+                        pinnedMesh.position.set(n.x, 0.22, n.z);
+                        pinnedMesh.rotation.x = Math.PI;
+                        modelGroup.add(pinnedMesh);
+                    }
+                }
+            });
+
+            // 3.5. Render Member Moment Releases (MY MZ) as Distinct Highlight Dots (STAAD Release Indicators)
+            const startRelSet = new Set(data.startReleaseBeams || []);
+            const endRelSet = new Set(data.endReleaseBeams || []);
+            const beamMap = new Map();
+            data.beams.forEach(b => beamMap.set(b.id, b));
+
+            const releasePositions = [];
+            const releaseSphereGeo = new THREE.SphereGeometry(0.12, 12, 12);
+            const releaseSphereMat = new THREE.MeshBasicMaterial({ color: 0xff1493 }); // Vivid Neon Pink / Magenta Release Indicator
+
+            const addReleaseMarker = (nFrom, nTo) => {
+                const dx = nTo.x - nFrom.x;
+                const dy = nTo.y - nFrom.y;
+                const dz = nTo.z - nFrom.z;
+                const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (len > 0.01) {
+                    const offsetDist = Math.min(0.35, len * 0.12);
+                    const rx = nFrom.x + (dx / len) * offsetDist;
+                    const ry = nFrom.y + (dy / len) * offsetDist;
+                    const rz = nFrom.z + (dz / len) * offsetDist;
+
+                    const sphere = new THREE.Mesh(releaseSphereGeo, releaseSphereMat);
+                    sphere.position.set(rx, ry, rz);
+                    modelGroup.add(sphere);
+                    releasePositions.push(rx, ry, rz);
+                }
+            };
+
+            startRelSet.forEach(bid => {
+                const b = beamMap.get(bid);
+                if (b) {
+                    const nA = nodeMap.get(b.nodeA);
+                    const nB = nodeMap.get(b.nodeB);
+                    if (nA && nB) addReleaseMarker(nA, nB);
+                }
+            });
+
+            endRelSet.forEach(bid => {
+                const b = beamMap.get(bid);
+                if (b) {
+                    const nA = nodeMap.get(b.nodeA);
+                    const nB = nodeMap.get(b.nodeB);
+                    if (nA && nB) addReleaseMarker(nB, nA);
+                }
+            });
+
+            if (releasePositions.length > 0) {
+                const relGeo = new THREE.BufferGeometry();
+                relGeo.setAttribute('position', new THREE.Float32BufferAttribute(releasePositions, 3));
+                const relPointsMat = new THREE.PointsMaterial({
+                    color: 0xff1493,
+                    size: 9.0,
+                    sizeAttenuation: false
+                });
+                modelGroup.add(new THREE.Points(relGeo, relPointsMat));
+            }
+
+            // 4. Render 3D RCC Concrete Wall Mesh (All 4 perimeter walls)
+            const showRcc = document.getElementById('showRccMesh').checked;
+            const rccH = config.rccWallHeight;
+            const totalW = data.stats.totalWidth;
+            const totalL = data.stats.totalLength;
+            const wallThick = 0.23; // 230mm realistic concrete wall thickness
+
+            if (showRcc && rccH > 0.05) {
+                const wallMat = new THREE.MeshLambertMaterial({
+                    color: 0x4a5568,
+                    transparent: true,
+                    opacity: 0.45,
+                    depthWrite: false
+                });
+
+                const wallEdgeMat = new THREE.LineBasicMaterial({
+                    color: 0x00cec9,
+                    transparent: true,
+                    opacity: 0.60
+                });
+
+                const addWallBox = (geo, posX, posY, posZ) => {
+                    const mesh = new THREE.Mesh(geo, wallMat);
+                    mesh.position.set(posX, posY, posZ);
+                    rccMeshGroup.add(mesh);
+
+                    const edges = new THREE.EdgesGeometry(geo);
+                    const line = new THREE.LineSegments(edges, wallEdgeMat);
+                    line.position.set(posX, posY, posZ);
+                    rccMeshGroup.add(line);
+                };
+
+                // Left Side Wall (X = 0, length = totalL)
+                addWallBox(new THREE.BoxGeometry(wallThick, rccH, totalL), 0, rccH / 2, totalL / 2);
+
+                // Right Side Wall (X = totalW, length = totalL)
+                addWallBox(new THREE.BoxGeometry(wallThick, rccH, totalL), totalW, rccH / 2, totalL / 2);
+
+                // Front Gable Wall (Z = totalL, width = totalW)
+                addWallBox(new THREE.BoxGeometry(totalW, rccH, wallThick), totalW / 2, rccH / 2, totalL);
+
+                // Rear Gable Wall (Z = 0, width = totalW)
+                addWallBox(new THREE.BoxGeometry(totalW, rccH, wallThick), totalW / 2, rccH / 2, 0);
+            }
+
+            // 3D Floating Orientation Badges
+            addSceneBadge("Front Gable", new THREE.Vector3(totalW / 2, 0.4, totalL + 1.8), "rgba(0, 184, 148, 0.25)", "#00cec9");
+            addSceneBadge("Rear Gable", new THREE.Vector3(totalW / 2, 0.4, -1.8), "rgba(116, 185, 255, 0.25)", "#74b9ff");
+            addSceneBadge("Left Wall (X=0)", new THREE.Vector3(-1.8, 0.4, totalL / 2), "rgba(241, 196, 15, 0.25)", "#f1c40f");
+            addSceneBadge("Right Wall (X=" + totalW.toFixed(0) + "m)", new THREE.Vector3(totalW + 1.8, 0.4, totalL / 2), "rgba(231, 76, 60, 0.25)", "#e74c3c");
+        }
+
+        function updateStats(stats, config, data) {
+            document.getElementById('statNodes').innerText = stats.nodeCount;
+            document.getElementById('statBeams').innerText = stats.beamCount;
+            document.getElementById('statFootprint').innerText = `${stats.totalWidth.toFixed(1)}m (X) x ${stats.totalLength.toFixed(1)}m (Z)`;
+            const eave = config.spans[0]?.eaveHeightLeft || 0;
+            const halfSpan = (config.spans[0]?.spanWidth || 24.0) / 2.0;
+            const rise = halfSpan / (config.spans[0]?.roofSlopeRatio || 10.0);
+            const ridge = eave + rise;
+            document.getElementById('statHeight').innerText = `${eave.toFixed(1)}m / ${ridge.toFixed(2)}m (Y)`;
+            document.getElementById('statRcc').innerText = `${config.rccWallHeight.toFixed(1)}m`;
+            document.getElementById('statSupports').innerText = stats.baseSupports;
+            const totalRel = (data?.startReleaseBeams?.length || 0) + (data?.endReleaseBeams?.length || 0);
+            document.getElementById('statReleases').innerText = `${totalRel} Pins`;
+        }
+
+        function getMemberTypeName(typeVal) {
+            const types = [
+                'Column', 'IntermediateColumn', 'Rafter', 'EaveStrut', 'RidgeStrut',
+                'RccWallTieBeam', 'GablePost', 'RoofBracing', 'WallBracing', 'CableTrayBracket',
+                'CableTrayRunner', 'MezzanineMainBeam', 'MezzanineSecondaryBeam', 'MezzanineColumn',
+                'PortalBeam', 'PortalKneeBrace'
+            ];
+            return types[typeVal] || 'Column';
+        }
+
+        let isEditorUserModified = false;
+
+        function onStaadEditorInput() {
+            isEditorUserModified = true;
+        }
+
+        function resetStaadEditor() {
+            isEditorUserModified = false;
+            if (currentStdText) {
+                document.getElementById('staadEditorArea').value = currentStdText;
+                showToast("🔄 STAAD editor reset to auto-generated script", "success");
+            }
+        }
+
+        function copyStaadCode() {
+            const text = document.getElementById('staadEditorArea').value || currentStdText;
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(() => {
+                showToast("📋 STAAD.Pro Command File copied to clipboard!", "success");
+            }).catch(() => {
+                const area = document.getElementById('staadEditorArea');
+                area.select();
+                document.execCommand('copy');
+                showToast("📋 STAAD.Pro Command File copied!", "success");
+            });
+        }
+
+        function toggleEditorSize() {
+            const panel = document.getElementById('staadEditorPanel');
+            const btn = document.getElementById('btnToggleEditor');
+            isEditorExpanded = !isEditorExpanded;
+
+            if (isEditorExpanded) {
+                panel.style.left = 'auto';
+                panel.style.right = '12px';
+                panel.style.top = '12px';
+                panel.style.bottom = '12px';
+                panel.style.width = 'clamp(480px, 45vw, 680px)';
+                panel.style.height = 'calc(100vh - 75px)';
+                btn.innerText = '🗗';
+                btn.title = 'Restore standard size';
+            } else {
+                panel.style.left = 'auto';
+                panel.style.right = '12px';
+                panel.style.top = 'auto';
+                panel.style.bottom = '12px';
+                panel.style.width = '380px';
+                panel.style.height = '480px';
+                btn.innerText = '⛶';
+                btn.title = 'Toggle full height';
+            }
+        }
+
+        let isCommandFileVisible = true;
+
+        function toggleCommandFileWindow(forceState) {
+            const panel = document.getElementById('staadEditorPanel');
+            const badge = document.getElementById('cmdFileStatusBadge');
+            const btn = document.getElementById('btnToggleCmdFile');
+
+            if (forceState !== undefined) {
+                isCommandFileVisible = forceState;
+            } else {
+                isCommandFileVisible = !isCommandFileVisible;
+            }
+
+            if (isCommandFileVisible) {
+                panel.style.display = 'flex';
+                badge.innerText = 'ON';
+                btn.style.color = '#00cec9';
+                btn.style.borderColor = '#00cec9';
+                showToast("📝 STAAD Command File window: ON", "success");
+            } else {
+                panel.style.display = 'none';
+                badge.innerText = 'OFF';
+                btn.style.color = 'var(--text-muted)';
+                btn.style.borderColor = 'var(--border)';
+                showToast("📝 STAAD Command File window: OFF", "");
+            }
+        }
+
+        async function loadPreset(presetKey) {
+            const res = await fetch('/api/presets');
+            const presets = await res.json();
+            const p = presets[presetKey];
+            if (!p) return;
+
+            if (p.spans.length === 1) {
+                document.getElementById('spanMode').value = "1";
+                document.getElementById('singleSpanRow').style.display = 'flex';
+                document.getElementById('customSpanRow').style.display = 'none';
+                document.getElementById('spanWidth').value = p.spans[0].spanWidth;
+            } else if (p.spans.length === 2 && p.spans[0].spanWidth === p.spans[1].spanWidth) {
+                document.getElementById('spanMode').value = "2";
+                document.getElementById('singleSpanRow').style.display = 'flex';
+                document.getElementById('customSpanRow').style.display = 'none';
+                document.getElementById('spanWidth').value = p.spans[0].spanWidth;
+            } else {
+                document.getElementById('spanMode').value = "custom";
+                document.getElementById('singleSpanRow').style.display = 'none';
+                document.getElementById('customSpanRow').style.display = 'flex';
+                document.getElementById('customSpanList').value = p.spans.map(s => s.spanWidth).join(', ');
+            }
+
+            document.getElementById('eaveHeight').value = p.spans[0].eaveHeightLeft;
+            document.getElementById('roofSlope').value = p.spans[0].roofSlopeRatio || 10;
+            document.getElementById('widthModules').value = p.widthModuleExpression || "2@12";
+            document.getElementById('baySpacings').value = p.baySpacingExpression || p.baySpacings.join(', ');
+            document.getElementById('rccWallHeight').value = p.rccWallHeight || 2.2;
+            document.getElementById('gablePostsFront').value = p.gableWalls.gableBaySpacingFront || p.gableWalls.windPostsStartEnd.toString();
+            document.getElementById('gablePostsRear').value = p.gableWalls.gableBaySpacingRear || p.gableWalls.windPostsEndWall.toString();
+            
+            const cableTrayConfig = p.cableTray || p.crane || { enabled: true, location: "side_intermediate", bracketHeight: 5.0, bracketLength: 0.8 };
+            document.getElementById('cableTrayEnabled').checked = cableTrayConfig.enabled;
+            document.getElementById('cableTrayLocation').value = cableTrayConfig.location || "side_intermediate";
+            document.getElementById('cableTrayHeight').value = cableTrayConfig.bracketHeight;
+            document.getElementById('cableTrayLength').value = cableTrayConfig.bracketLength;
+
+            document.getElementById('roofBracing').checked = p.bracing.includeRoofBracing;
+            document.getElementById('wallBracing').checked = p.bracing.includeWallBracing;
+            document.getElementById('maxBraceLength').value = p.bracing.maxBraceLength || 12.5;
+            document.getElementById('bracedBays').value = p.bracing.bracedBayIndices.join(', ');
+            document.getElementById('mezzanineEnabled').checked = p.mezzanine.enabled;
+            document.getElementById('mezzanineHeight').value = p.mezzanine.floorHeight;
+            document.getElementById('mezzanineWidth').value = p.mezzanine.endX;
+            document.getElementById('mezzanineBays').value = p.mezzanine.bayIndices.join(', ');
+
+            isEditorUserModified = false;
+            updateModel();
+            showToast(`Loaded preset: ${p.modelName}`, 'success');
+        }
+
+        async function exportStdFile() {
+            const config = getConfigFromUI();
+            const editorText = document.getElementById('staadEditorArea').value || currentStdText;
+            try {
+                showToast("Saving STAAD .std file...", "");
+                const blob = new Blob([editorText], { type: 'text/plain;charset=utf-8' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `STAAD_PORTAL_${config.spans.length}SPAN_${config.totalWidth}x${config.totalLength}M.std`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+
+                showToast("STAAD .std file saved successfully!", "success");
+            } catch (err) {
+                showToast("Export error: " + err.message, "error");
+            }
+        }
+
+        async function pushToOpenStaad() {
+            const config = getConfigFromUI();
+            showToast("Connecting to live STAAD.Pro via OpenSTAAD...", "");
+
+            try {
+                const res = await fetch('/api/push-openstaad', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                const result = await res.json();
+                if (result.success) {
+                    showToast(`🚀 ${result.message}`, "success");
+                } else {
+                    showToast(`⚠️ ${result.message}`, "error");
+                }
+            } catch (err) {
+                showToast("Bridge communication error: " + err.message, "error");
+            }
+        }
+
+        let isSidebarVisible = true;
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebarPanel');
+            const btn = document.getElementById('btnToggleSidebar');
+            isSidebarVisible = !isSidebarVisible;
+
+            if (isSidebarVisible) {
+                sidebar.classList.remove('collapsed');
+                btn.innerText = '◀ Controls';
+                btn.style.color = '#74b9ff';
+                btn.style.borderColor = '#74b9ff';
+            } else {
+                sidebar.classList.add('collapsed');
+                btn.innerText = '▶ Controls';
+                btn.style.color = '#a4b0be';
+                btn.style.borderColor = 'var(--border)';
+            }
+
+            setTimeout(() => {
+                onWindowResize();
+                fitCamera();
+            }, 300);
+        }
+
+        function initDraggableEditor() {
+            const panel = document.getElementById('staadEditorPanel');
+            const header = document.getElementById('staadEditorHeader');
+            if (!panel || !header) return;
+
+            let isDragging = false;
+            let grabOffsetX = 0;
+            let grabOffsetY = 0;
+
+            header.addEventListener('pointerdown', (e) => {
+                if (e.target.closest('button') || e.target.closest('textarea')) return;
+
+                isDragging = true;
+                const rect = panel.getBoundingClientRect();
+                grabOffsetX = e.clientX - rect.left;
+                grabOffsetY = e.clientY - rect.top;
+
+                panel.style.left = `${rect.left}px`;
+                panel.style.top = `${rect.top}px`;
+                panel.style.right = 'auto';
+                panel.style.bottom = 'auto';
+
+                try { header.setPointerCapture(e.pointerId); } catch (_) {}
+                e.preventDefault();
+            });
+
+            header.addEventListener('pointermove', (e) => {
+                if (!isDragging) return;
+
+                let newLeft = e.clientX - grabOffsetX;
+                let newTop = e.clientY - grabOffsetY;
+
+                const maxX = window.innerWidth - panel.offsetWidth - 5;
+                const maxY = window.innerHeight - panel.offsetHeight - 5;
+
+                newLeft = Math.max(5, Math.min(newLeft, maxX));
+                newTop = Math.max(48, Math.min(newTop, maxY));
+
+                panel.style.left = `${newLeft}px`;
+                panel.style.top = `${newTop}px`;
+            });
+
+            const stopDrag = (e) => {
+                if (isDragging) {
+                    isDragging = false;
+                    try { header.releasePointerCapture(e.pointerId); } catch (_) {}
+                }
+            };
+
+            header.addEventListener('pointerup', stopDrag);
+            header.addEventListener('pointercancel', stopDrag);
+        }
+
+        function showToast(msg, type) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.className = `show ${type}`;
+            setTimeout(() => {
+                toast.className = '';
+            }, 4000);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            init3D();
+            fetchAndRenderModel();
+            initDraggableEditor();
+        });
+    </script>
+</body>
+</html>
