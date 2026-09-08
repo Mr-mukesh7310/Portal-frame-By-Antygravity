@@ -5,24 +5,27 @@ namespace StaadPortalEngine.Models
 {
     public enum MemberType
     {
-        Column,
-        IntermediateColumn,
-        Rafter,
-        EaveStrut,
-        RidgeStrut,
-        RccWallTieBeam,
-        GablePost,
-        RoofBracing,
-        WallBracing,
-        CableTrayBracket,
-        CableTrayRunner,
-        CraneCorbel = CableTrayBracket, // Backward compatibility alias
-        MezzanineMainBeam,
-        MezzanineSecondaryBeam,
-        MezzanineColumn,
-        PortalBeam,
-        PortalKneeBrace,
-        JackBeam
+        Column = 0,
+        IntermediateColumn = 1,
+        Rafter = 2,
+        EaveStrut = 3,
+        RidgeStrut = 4,
+        RccWallTieBeam = 5,
+        GablePost = 6,
+        RoofBracing = 7,
+        WallBracing = 8,
+        CableTrayBracket = 9,
+        CableTrayRunner = 10,
+        CraneCorbel = 9, // Backward compatibility alias
+        MezzanineMainBeam = 11,
+        MezzanineSecondaryBeam = 12,
+        MezzanineColumn = 13,
+        PortalBeam = 14,
+        PortalKneeBrace = 15,
+        JackBeam = 16,
+        CanopyRafter = 17,
+        CanopyRunner = 18,
+        CanopyBracing = 19
     }
 
     public enum FrameType
@@ -65,19 +68,54 @@ namespace StaadPortalEngine.Models
         public int NodeB { get; set; }
         public MemberType Type { get; set; }
         public string GroupName { get; set; } = string.Empty;
+        public string SectionProperty { get; set; } = string.Empty;
 
         public Beam3D() { }
 
-        public Beam3D(int id, int nodeA, int nodeB, MemberType type, string groupName = "")
+        public Beam3D(int id, int nodeA, int nodeB, MemberType type, string groupName = "", string sectionProperty = "")
         {
             Id = id;
             NodeA = nodeA;
             NodeB = nodeB;
             Type = type;
             GroupName = string.IsNullOrEmpty(groupName) ? type.ToString().ToUpperInvariant() : groupName;
+            SectionProperty = sectionProperty ?? string.Empty;
         }
 
         public override string ToString() => $"Beam {Id} [{Type}]: ({NodeA} -> {NodeB})";
+    }
+
+    public class Template2DNode
+    {
+        public int Id { get; set; }
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Z { get; set; }
+        public bool IsBase { get; set; }
+        public string SupportType { get; set; } = string.Empty;
+    }
+
+    public class Template2DBeam
+    {
+        public int Id { get; set; }
+        public int NodeA { get; set; }
+        public int NodeB { get; set; }
+        public MemberType Type { get; set; }
+        public string GroupName { get; set; } = string.Empty;
+        public string SectionProperty { get; set; } = string.Empty;
+        public bool StartReleaseMyMz { get; set; }
+        public bool EndReleaseMyMz { get; set; }
+        public bool Beta90 { get; set; }
+    }
+
+    public class Template2DFrameDefinition
+    {
+        public List<Template2DNode> Nodes { get; set; } = new();
+        public List<Template2DBeam> Beams { get; set; } = new();
+        public List<string> LoadLines { get; set; } = new();
+        public string PreservedPreamble { get; set; } = string.Empty;
+        public string PreservedPostamble { get; set; } = string.Empty;
+        public List<string> PreservedCommandBlocks { get; set; } = new();
     }
 
     public class GeneratedModel
@@ -93,5 +131,8 @@ namespace StaadPortalEngine.Models
         public List<int> StartReleaseMyMzBeamIds { get; set; } = new();
         public List<int> EndReleaseMyMzBeamIds { get; set; } = new();
         public List<int> Beta90BeamIds { get; set; } = new();
+        public Dictionary<int, List<int>> TemplateBeamTo3DBeamMap { get; set; } = new();
+        public Template2DFrameDefinition? TemplateFrame { get; set; }
+        public string CustomPropertyText { get; set; } = string.Empty;
     }
 }

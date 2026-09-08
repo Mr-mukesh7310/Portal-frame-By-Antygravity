@@ -751,5 +751,1113 @@ namespace StaadPortalEngine.Tests
             // Stub posts have ASSIGN COLUMN
             Assert.Contains("ASSIGN COLUMN", std);
         }
+
+        [Fact]
+        public void Test_BaySpacing_Zero_ReturnsEmptyList()
+        {
+            var bays0 = SpacingParser.ParseBaySpacings("0");
+            Assert.Empty(bays0);
+
+            var bays0Dot0 = SpacingParser.ParseBaySpacings("0.0");
+            Assert.Empty(bays0Dot0);
+        }
+
+        [Fact]
+        public void Test_BaySpacing_Zero_GeneratesSingleMidFrame()
+        {
+            var builder = new PortalGeometryBuilder();
+            var config = new PortalConfiguration
+            {
+                ModelName = "Single Mid Frame 50m Span",
+                Spans = new List<SpanDefinition> { new SpanDefinition(50.0, 15.0, 5.0) },
+                WidthModuleExpression = "3", // 3 intermediate columns at X = 12.5, 25.0, 37.5
+                BaySpacingExpression = "0", // ZERO BAYS -> single mid frame
+                RccWallHeight = 3.0,
+                GableWalls = new GableWallConfiguration { GableBaySpacingFront = "3", GableBaySpacingRear = "3" },
+                CableTray = new CableTrayConfiguration { Enabled = true, Location = "side_intermediate", BracketHeight = 5.0, BracketLength = 0.8 }
+            };
+
+            var model = builder.Build(config);
+
+            Assert.NotNull(model);
+            Assert.Equal(50.0, config.TotalWidth);
+            Assert.Equal(0.0, config.TotalLength);
+            Assert.Equal(0, config.TotalBays);
+            Assert.Equal(1, config.TotalFrames);
+
+            // 1. Verify all generated nodes are situated at Z = 0.0
+            Assert.NotEmpty(model.Nodes);
+            foreach (var node in model.Nodes.Values)
+            {
+                Assert.True(Math.Abs(node.Z) < 0.001, $"Node {node.Id} should be at Z=0, but got Z={node.Z}");
+            }
+
+            // 2. Verify NO gable wind posts exist (it is a mid frame, not a gable endwall)
+            var gablePosts = model.Beams.Values.Where(b => b.Type == MemberType.GablePost).ToList();
+            Assert.Empty(gablePosts);
+
+            // 3. Verify intermediate columns DO exist on the mid frame
+            var intCols = model.Beams.Values.Where(b => b.Type == MemberType.IntermediateColumn).ToList();
+            Assert.NotEmpty(intCols);
+            var intColXCoords = intCols.Select(b => model.Nodes[b.NodeA].X).Distinct().OrderBy(x => x).ToList();
+            Assert.Contains(intColXCoords, x => Math.Abs(x - 12.5) < 0.1);
+            Assert.Contains(intColXCoords, x => Math.Abs(x - 25.0) < 0.1);
+            Assert.Contains(intColXCoords, x => Math.Abs(x - 37.5) < 0.1);
+
+            // 4. Verify exterior columns exist at X = 0 and X = 50
+            var extCols = model.Beams.Values.Where(b => b.Type == MemberType.Column).ToList();
+            Assert.NotEmpty(extCols);
+            var extColXCoords = extCols.Select(b => model.Nodes[b.NodeA].X).Distinct().OrderBy(x => x).ToList();
+            Assert.Contains(extColXCoords, x => Math.Abs(x - 0.0) < 0.1);
+            Assert.Contains(extColXCoords, x => Math.Abs(x - 50.0) < 0.1);
+
+            // 5. Verify NO longitudinal members exist (no struts, no bracings, no jack beams)
+            Assert.DoesNotContain(model.Beams.Values, b => b.Type == MemberType.EaveStrut || b.Type == MemberType.RidgeStrut);
+            Assert.DoesNotContain(model.Beams.Values, b => b.Type == MemberType.RoofBracing || b.Type == MemberType.WallBracing);
+            Assert.DoesNotContain(model.Beams.Values, b => b.Type == MemberType.JackBeam);
+
+            // 6. Verify Supports: Exterior columns FIXED, Intermediate columns PINNED
+            Assert.Equal(2, model.FixedBaseNodeIds.Count);
+            Assert.Equal(3, model.PinnedBaseNodeIds.Count);
+
+            // 7. Verify STAAD .std output
+            string std = StaadStdWriter.GenerateStdText(model);
+            Assert.Contains("STAAD SPACE", std);
+            Assert.Contains("JOINT COORDINATES", std);
+            Assert.Contains("MEMBER INCIDENCES", std);
+            Assert.Contains("SUPPORTS", std);
+            Assert.Contains("FIXED", std);
+            Assert.Contains("PINNED", std);
+            Assert.Contains("FINISH", std);
+        }
+
+        [Fact]
+        public void Test_Convert2DTo3D_PreservesOptimizedPropertiesAndAddsBracingAndGables()
+        {
+            string std2D = @"STAAD SPACE
+START JOB INFORMATION
+ENGINEER DATE 02-Sep-26
+JOB NAME 2D Tapered PEB Frame
+END JOB INFORMATION
+INPUT WIDTH 79
+UNIT METER KN
+JOINT COORDINATES
+1 0.0000 0.0000 0.0000;
+2 0.0000 7.0000 0.0000;
+3 12.0000 8.2000 0.0000;
+4 24.0000 7.0000 0.0000;
+5 24.0000 0.0000 0.0000;
+MEMBER INCIDENCES
+1 1 2;
+2 2 3;
+3 3 4;
+4 5 4;
+MEMBER PROPERTY INDIAN
+1 4 TAPERED 0.40 0.010 0.25 0.012 0.75 0.25 0.012
+2 3 TAPERED 0.75 0.010 0.25 0.012 0.40 0.25 0.012
+SUPPORTS
+1 5 FIXED
+PERFORM ANALYSIS
+FINISH";
+
+            var builder = new PortalGeometryBuilder();
+            var config = new PortalConfiguration
+            {
+                ModelName = "Converted 3D PEB Shed",
+                GenerationMode = "convert2d",
+                Template2DStdText = std2D,
+                BaySpacingExpression = "3@6.0", // 3 bays = 4 frames at Z = 18, 12, 6, 0
+                Bracing = new BracingConfiguration
+                {
+                    IncludeRoofBracing = true,
+                    IncludeWallBracing = true,
+                    BracedBayIndices = new List<int> { 0, 2 }
+                },
+                GableWalls = new GableWallConfiguration
+                {
+                    GableBaySpacingFront = "3", // 3 posts
+                    GableBaySpacingRear = "3"
+                }
+            };
+
+            var model = builder.Build(config);
+
+            Assert.NotNull(model);
+            Assert.Equal(4, model.Configuration.TotalFrames);
+            Assert.Equal(18.0, model.Configuration.TotalLength);
+
+            // 1. Verify 4 portal frames exist along Z = 18, 12, 6, 0
+            var distinctZ = model.Nodes.Values.Select(n => Math.Round(n.Z, 2)).Distinct().OrderByDescending(z => z).ToList();
+            Assert.Contains(distinctZ, z => Math.Abs(z - 18.0) < 0.1);
+            Assert.Contains(distinctZ, z => Math.Abs(z - 12.0) < 0.1);
+            Assert.Contains(distinctZ, z => Math.Abs(z - 6.0) < 0.1);
+            Assert.Contains(distinctZ, z => Math.Abs(z - 0.0) < 0.1);
+
+            // 2. Verify all 4 frames have their columns (4 frames * 2 cols = 8) and rafters
+            // Note: Since rafters are broken at intermediate joints (gable posts/struts at X=6 and X=18),
+            // each half-span rafter is broken into 2 segments (4 rafter segments per frame * 4 frames = 16)
+            var columns = model.Beams.Values.Where(b => b.Type == MemberType.Column).ToList();
+            var rafters = model.Beams.Values.Where(b => b.Type == MemberType.Rafter).ToList();
+            Assert.Equal(8, columns.Count);
+            Assert.Equal(16, rafters.Count);
+
+            // 3. Verify Tapered sections are preserved on columns and rafters
+            foreach (var col in columns)
+            {
+                Assert.Contains("TAPERED", col.SectionProperty);
+            }
+            foreach (var raf in rafters)
+            {
+                Assert.Contains("TAPERED", raf.SectionProperty);
+            }
+
+            // 4. Verify Longitudinal Struts exist (eaves and ridge struts)
+            var struts = model.Beams.Values.Where(b => b.Type == MemberType.EaveStrut || b.Type == MemberType.RidgeStrut).ToList();
+            Assert.NotEmpty(struts);
+
+            // 5. Verify Roof & Wall X-bracing exist
+            var roofBracing = model.Beams.Values.Where(b => b.Type == MemberType.RoofBracing).ToList();
+            var wallBracing = model.Beams.Values.Where(b => b.Type == MemberType.WallBracing).ToList();
+            Assert.NotEmpty(roofBracing);
+            Assert.NotEmpty(wallBracing);
+
+            // 6. Verify Gable wind posts exist on Front (Z=18) and Rear (Z=0) frames
+            var gablePosts = model.Beams.Values.Where(b => b.Type == MemberType.GablePost).ToList();
+            Assert.NotEmpty(gablePosts);
+            var gableZ = gablePosts.Select(b => Math.Round(model.Nodes[b.NodeA].Z, 2)).Distinct().ToList();
+            Assert.Contains(gableZ, z => Math.Abs(z - 18.0) < 0.1);
+            Assert.Contains(gableZ, z => Math.Abs(z - 0.0) < 0.1);
+
+            // 7. Verify STAAD .std output contains preserved tapered properties and added bracing/strut properties
+            string std = StaadStdWriter.GenerateStdText(model);
+            Assert.Contains("TAPERED", std);
+            Assert.Contains("ISA65X65X6", std);
+            Assert.Contains("ISMC150", std);
+            Assert.Contains("ISMB250", std);
+            Assert.Contains("_FRAME", std);
+            Assert.Contains("_ROOFBRACING", std);
+            Assert.Contains("_WALLBRACING", std);
+            Assert.Contains("_GABLEPOSTS", std);
+            Assert.Contains("MEMBER TENSION", std);
+            Assert.Contains("SUPPORTS", std);
+            Assert.Contains("FIXED", std);
+            Assert.Contains("PINNED", std);
+        }
+
+        [Fact]
+        public void Test_Convert2DTo3D_AdvancedStructuralRules()
+        {
+            // 2D Model with:
+            // 1. RCC wall node at Y=2.0 on left column (Node 2)
+            // 2. Intermediate frame column at X=12.0 (Node 10 to Node 5)
+            // 3. Canopy cantilever on right column at Y=4.5 (Node 8 to Node 11 at X=27)
+            string std2D = @"STAAD SPACE
+START JOB INFORMATION
+ENGINEER DATE 03-Sep-26
+JOB NAME 2D Advanced Structural PEB
+END JOB INFORMATION
+INPUT WIDTH 79
+UNIT METER KN
+JOINT COORDINATES
+1 0.0000 0.0000 0.0000;
+2 0.0000 2.0000 0.0000;
+3 0.0000 7.0000 0.0000;
+4 6.0000 7.6000 0.0000;
+5 12.0000 8.2000 0.0000;
+6 18.0000 7.6000 0.0000;
+7 24.0000 7.0000 0.0000;
+8 24.0000 4.5000 0.0000;
+9 24.0000 0.0000 0.0000;
+10 12.0000 0.0000 0.0000;
+11 27.0000 4.5000 0.0000;
+MEMBER INCIDENCES
+1 1 2;
+2 2 3;
+3 3 4;
+4 4 5;
+5 5 6;
+6 6 7;
+7 9 8;
+8 8 7;
+9 10 5;
+10 8 11;
+MEMBER PROPERTY INDIAN
+1 TO 2 7 TO 8 TAPERED 0.40 0.010 0.25 0.012 0.75 0.25 0.012
+3 TO 6 TAPERED 0.75 0.010 0.25 0.012 0.45 0.25 0.012
+9 TABLE ST ISMB350
+10 TABLE ST ISMB200
+SUPPORTS
+1 9 FIXED
+10 PINNED
+PERFORM ANALYSIS
+FINISH";
+
+            var builder = new PortalGeometryBuilder();
+            var config = new PortalConfiguration
+            {
+                ModelName = "Advanced Converted 3D Shed",
+                GenerationMode = "convert2d",
+                Template2DStdText = std2D,
+                BaySpacingExpression = "3@6.0", // 4 frames at Z = 18, 12, 6, 0
+                Bracing = new BracingConfiguration
+                {
+                    IncludeRoofBracing = true,
+                    IncludeWallBracing = true,
+                    MaxBraceLength = 12.5,
+                    BracedBayIndices = new List<int> { 0, 2 }
+                },
+                GableWalls = new GableWallConfiguration
+                {
+                    GableBaySpacingFront = "3",
+                    GableBaySpacingRear = "3"
+                }
+            };
+
+            var model = builder.Build(config);
+            Assert.NotNull(model);
+
+            // Rule 2: Wall height auto-detected from 1st node above base (Y = 2.0)
+            Assert.Equal(2.0, model.Configuration.RccWallHeight);
+
+            // Rule 1: 2D Intermediate column at X=12 is REMOVED from front (Z=18) and rear (Z=0) gable frames,
+            // but PRESENT on interior frames (Z=12, 6)
+            var intColBeams = model.Beams.Values.Where(b =>
+            {
+                var nA = model.Nodes[b.NodeA];
+                var nB = model.Nodes[b.NodeB];
+                return Math.Abs(nA.X - 12.0) < 0.15 && Math.Abs(nB.X - 12.0) < 0.15 && Math.Min(nA.Y, nB.Y) < 0.5 && b.Type != MemberType.GablePost;
+            }).ToList();
+
+            // Interior frames (Z=12 and Z=6) have interior columns
+            var intColZ = intColBeams.Select(b => Math.Round(model.Nodes[b.NodeA].Z, 2)).Distinct().ToList();
+            Assert.Contains(intColZ, z => Math.Abs(z - 12.0) < 0.1);
+            Assert.Contains(intColZ, z => Math.Abs(z - 6.0) < 0.1);
+
+            // Front (Z=18) and rear (Z=0) gable frames DO NOT have the 2D intermediate framed column
+            Assert.DoesNotContain(intColZ, z => Math.Abs(z - 18.0) < 0.1);
+            Assert.DoesNotContain(intColZ, z => Math.Abs(z - 0.0) < 0.1);
+
+            // Rule 3: End gable posts exist and have longitudinal strut pipes connecting their tops into the building
+            var gablePosts = model.Beams.Values.Where(b => b.Type == MemberType.GablePost).ToList();
+            Assert.NotEmpty(gablePosts);
+            foreach (var gp in gablePosts)
+            {
+                var topNode = model.Nodes[gp.NodeB];
+                // Check longitudinal strut attached to topNode
+                var connectedStruts = model.Beams.Values.Where(b =>
+                    (b.Type == MemberType.EaveStrut || b.Type == MemberType.RidgeStrut) &&
+                    (b.NodeA == topNode.Id || b.NodeB == topNode.Id)).ToList();
+                Assert.NotEmpty(connectedStruts);
+            }
+
+            // Rule 3: Roof bracing is modeled in panels between strut lines
+            var roofBracing = model.Beams.Values.Where(b => b.Type == MemberType.RoofBracing).ToList();
+            Assert.NotEmpty(roofBracing);
+
+            // Rule 4: Canopy cross-bracing rule: On the right wall (X=24) where canopy exists at Y=4.5,
+            // cross bracing is modeled BOTH below canopy (Y <= 4.5) AND above canopy (Y >= 4.5)
+            var rightWallBracing = model.Beams.Values.Where(b =>
+            {
+                var nA = model.Nodes[b.NodeA];
+                var nB = model.Nodes[b.NodeB];
+                return b.Type == MemberType.WallBracing && Math.Abs(nA.X - 24.0) < 0.15 && Math.Abs(nB.X - 24.0) < 0.15;
+            }).ToList();
+
+            Assert.NotEmpty(rightWallBracing);
+            // Verify bracing below canopy (starts at base Y ~ 0)
+            Assert.Contains(rightWallBracing, b =>
+            {
+                var nA = model.Nodes[b.NodeA];
+                var nB = model.Nodes[b.NodeB];
+                return Math.Min(nA.Y, nB.Y) < 1.0;
+            });
+            // Verify bracing above canopy (reaches eave Y > 4.5)
+            Assert.Contains(rightWallBracing, b =>
+            {
+                var nA = model.Nodes[b.NodeA];
+                var nB = model.Nodes[b.NodeB];
+                return Math.Max(nA.Y, nB.Y) > 5.0;
+            });
+
+            // Canopy continuous runners connecting cantilever tips along building length
+            var canopyRunners = model.Beams.Values.Where(b => b.GroupName == "CANOPY_RUNNER").ToList();
+            Assert.NotEmpty(canopyRunners);
+
+            // Canopy plan cross-bracing in braced bays
+            var canopyBracing = model.Beams.Values.Where(b => b.GroupName == "CANOPY_BRACE").ToList();
+            Assert.NotEmpty(canopyBracing);
+
+            // Left wall (no canopy): Cross bracing starts from foundation base (Y = 0)
+            var leftWallBracing = model.Beams.Values.Where(b =>
+            {
+                var nA = model.Nodes[b.NodeA];
+                var nB = model.Nodes[b.NodeB];
+                return b.Type == MemberType.WallBracing && Math.Abs(nA.X - 0.0) < 0.15 && Math.Abs(nB.X - 0.0) < 0.15;
+            }).ToList();
+
+            Assert.NotEmpty(leftWallBracing);
+            var leftBaseNodes = leftWallBracing.SelectMany(b => new[] { model.Nodes[b.NodeA], model.Nodes[b.NodeB] })
+                .Where(n => Math.Abs(n.Y) < 0.1).ToList();
+            Assert.NotEmpty(leftBaseNodes);
+
+            // Rule 5: Check all braces respect MaxBraceLength (12.5m)
+            var allBracing = model.Beams.Values.Where(b => b.Type == MemberType.RoofBracing || b.Type == MemberType.WallBracing).ToList();
+            foreach (var br in allBracing)
+            {
+                var nA = model.Nodes[br.NodeA];
+                var nB = model.Nodes[br.NodeB];
+                double dx = nB.X - nA.X;
+                double dy = nB.Y - nA.Y;
+                double dz = nB.Z - nA.Z;
+                double len = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                Assert.True(len <= 12.55, $"Brace {br.Id} length {len:F2}m exceeds max 12.5m");
+            }
+
+            // Verification of Requirement 2: Horizontal member along wall height is REMOVED
+            Assert.DoesNotContain(model.Beams.Values, b => b.Type == MemberType.RccWallTieBeam);
+
+            // Verification of Requirement 3: Canopy side exterior column IS present on Front (Z=18) and Rear (Z=0) gable frames
+            var rightColBeams = model.Beams.Values.Where(b =>
+            {
+                var nA = model.Nodes[b.NodeA];
+                var nB = model.Nodes[b.NodeB];
+                return Math.Abs(nA.X - 24.0) < 0.15 && Math.Abs(nB.X - 24.0) < 0.15 && b.Type != MemberType.WallBracing;
+            }).ToList();
+            var rightColZ = rightColBeams.Select(b => Math.Round(model.Nodes[b.NodeA].Z, 2)).Distinct().ToList();
+            Assert.Contains(rightColZ, z => Math.Abs(z - 18.0) < 0.1);
+            Assert.Contains(rightColZ, z => Math.Abs(z - 0.0) < 0.1);
+
+            // Verification of Requirement 3: Wall bracing IS added on canopy side between front gable and adjacent frame
+            var bay0RightBracing = rightWallBracing.Where(b =>
+            {
+                var nA = model.Nodes[b.NodeA];
+                var nB = model.Nodes[b.NodeB];
+                return (Math.Abs(nA.Z - 18.0) < 0.1 && Math.Abs(nB.Z - 12.0) < 0.1) ||
+                       (Math.Abs(nA.Z - 12.0) < 0.1 && Math.Abs(nB.Z - 18.0) < 0.1);
+            }).ToList();
+            Assert.NotEmpty(bay0RightBracing);
+        }
+
+        [Fact]
+        public void Test_Convert2DTo3D_JackPortal_IntermediateColumns_JackBeams_And_Releases()
+        {
+            string std2DWithIntCol = @"STAAD SPACE
+START JOB INFORMATION
+ENGINEER DATE 04-Sep-26
+JOB NAME 2D Frame with Intermediate Column
+END JOB INFORMATION
+INPUT WIDTH 79
+UNIT METER KN
+JOINT COORDINATES
+1 0.0000 0.0000 0.0000;
+2 0.0000 7.0000 0.0000;
+3 12.0000 0.0000 0.0000;
+4 12.0000 8.2000 0.0000;
+5 24.0000 7.0000 0.0000;
+6 24.0000 0.0000 0.0000;
+MEMBER INCIDENCES
+1 1 2;
+2 2 4;
+3 4 5;
+4 6 5;
+5 3 4;
+MEMBER PROPERTY INDIAN
+1 4 TAPERED 0.40 0.010 0.25 0.012 0.75 0.25 0.012
+2 3 TAPERED 0.75 0.010 0.25 0.012 0.40 0.25 0.012
+5 TABLE ST ISMB400
+SUPPORTS
+1 6 FIXED
+3 PINNED
+PERFORM ANALYSIS
+FINISH";
+
+            var builder = new PortalGeometryBuilder();
+            var config = new PortalConfiguration
+            {
+                ModelName = "2D to 3D with Jack Portal",
+                GenerationMode = "convert2d",
+                Template2DStdText = std2DWithIntCol,
+                BaySpacingExpression = "6@6.0", // Z = 36, 30, 24, 18, 12, 6, 0 (Total 36m, 7 frames)
+                JackPortal = new JackPortalConfiguration
+                {
+                    Enabled = true,
+                    IntermediateBaySpacingExpression = "3@12.0" // Intermediate cols at Z = 36, 24, 12, 0. Skipped at Z = 30, 18, 6
+                }
+            };
+
+            var model = builder.Build(config);
+            string std = StaadStdWriter.GenerateStdText(model);
+
+            // 1. Verify intermediate columns exist: full columns on interior frames at Z = 24, 12; skipped at Z = 30, 18, 6
+            var intCols = model.Beams.Values.Where(b => b.Type == MemberType.IntermediateColumn).ToList();
+            Assert.NotEmpty(intCols);
+
+            var fullColBaseNodes = intCols.Select(b => model.Nodes[b.NodeA]).Concat(intCols.Select(b => model.Nodes[b.NodeB]))
+                .Where(n => Math.Abs(n.X - 12.0) < 0.05 && Math.Abs(n.Y - 0.0) < 0.05).Select(n => n.Z).Distinct().ToList();
+            Assert.Contains(fullColBaseNodes, z => Math.Abs(z - 24.0) < 0.05);
+            Assert.Contains(fullColBaseNodes, z => Math.Abs(z - 12.0) < 0.05);
+            Assert.DoesNotContain(fullColBaseNodes, z => Math.Abs(z - 30.0) < 0.05);
+            Assert.DoesNotContain(fullColBaseNodes, z => Math.Abs(z - 18.0) < 0.05);
+            Assert.DoesNotContain(fullColBaseNodes, z => Math.Abs(z - 6.0) < 0.05);
+
+            // 2. Verify Jack Beams exist 1m below rafter level (Y = 8.2 - 1.0 = 7.2)
+            var jackBeams = model.Beams.Values.Where(b => b.Type == MemberType.JackBeam).ToList();
+            Assert.NotEmpty(jackBeams);
+            Assert.Contains("_JACKBEAMS", std);
+            Assert.Contains("TABLE ST ISMB500", std);
+
+            var jackNodes = jackBeams.Select(b => model.Nodes[b.NodeA]).Concat(jackBeams.Select(b => model.Nodes[b.NodeB])).ToList();
+            double expectedJackY = 8.2 - 1.0; // 7.2m
+            Assert.All(jackNodes, n => Assert.True(Math.Abs(n.Y - expectedJackY) < 0.15));
+
+            // 3. Verify stub posts exist at skipped frames (Z = 30, 18, 6) from Y = 7.2 to Y = 8.2
+            var stubPosts = model.Beams.Values.Where(b => b.GroupName == "JACK_POST").ToList();
+            Assert.NotEmpty(stubPosts);
+            var stubPostZ = stubPosts.Select(b => model.Nodes[b.NodeA].Z).Distinct().ToList();
+            Assert.Contains(stubPostZ, z => Math.Abs(z - 30.0) < 0.05);
+            Assert.Contains(stubPostZ, z => Math.Abs(z - 18.0) < 0.05);
+            Assert.Contains(stubPostZ, z => Math.Abs(z - 6.0) < 0.05);
+
+            // 4. Verify releases: stub posts have BOTH Start and End releases
+            foreach (var sp in stubPosts)
+            {
+                Assert.Contains(sp.Id, model.StartReleaseMyMzBeamIds);
+                Assert.Contains(sp.Id, model.EndReleaseMyMzBeamIds);
+            }
+
+            // 5. Verify full intermediate columns have top release connecting to rafter
+            Assert.NotEmpty(model.EndReleaseMyMzBeamIds);
+
+            // 6. Verify ASSIGN COLUMN and _JACKPOSTS in STAAD output
+            Assert.Contains("ASSIGN COLUMN", std);
+            Assert.Contains("_JACKPOSTS", std);
+
+            // 7. Verify Jack Portal intermediate columns and stub posts have BETA 90
+            foreach (var col in intCols)
+            {
+                Assert.Contains(col.Id, model.Beta90BeamIds);
+            }
+            Assert.Contains("BETA 90 MEMB", std);
+        }
+
+        [Fact]
+        public void Test_Convert2DTo3D_CableTray_SideIntermediateAndAllLocations()
+        {
+            string std2DWithIntCol = @"STAAD SPACE
+START JOB INFORMATION
+ENGINEER DATE 04-Sep-26
+JOB NAME 2D Frame with Intermediate Column
+END JOB INFORMATION
+INPUT WIDTH 79
+UNIT METER KN
+JOINT COORDINATES
+1 0.0000 0.0000 0.0000;
+2 0.0000 7.0000 0.0000;
+3 12.0000 0.0000 0.0000;
+4 12.0000 8.2000 0.0000;
+5 24.0000 7.0000 0.0000;
+6 24.0000 0.0000 0.0000;
+MEMBER INCIDENCES
+1 1 2;
+2 2 4;
+3 4 5;
+4 6 5;
+5 3 4;
+MEMBER PROPERTY INDIAN
+1 4 TAPERED 0.40 0.010 0.25 0.012 0.75 0.25 0.012
+2 3 TAPERED 0.75 0.010 0.25 0.012 0.40 0.25 0.012
+5 TABLE ST ISMB400
+SUPPORTS
+1 6 FIXED
+3 PINNED
+PERFORM ANALYSIS
+FINISH";
+
+            var builder = new PortalGeometryBuilder();
+
+            // Test 1: Location = "side_intermediate"
+            var configInt = new PortalConfiguration
+            {
+                ModelName = "2D to 3D Cable Tray Side+Int",
+                GenerationMode = "convert2d",
+                Template2DStdText = std2DWithIntCol,
+                BaySpacingExpression = "2@6.0", // 3 frames: Z = 12, 6, 0
+                CableTray = new CableTrayConfiguration
+                {
+                    Enabled = true,
+                    Location = "side_intermediate",
+                    BracketHeight = 4.5,
+                    BracketLength = 0.7
+                }
+            };
+
+            var modelInt = builder.Build(configInt);
+            string stdInt = StaadStdWriter.GenerateStdText(modelInt);
+
+            // Verify brackets exist
+            var bracketsInt = modelInt.Beams.Values.Where(b => b.Type == MemberType.CableTrayBracket).ToList();
+            Assert.NotEmpty(bracketsInt);
+
+            // Left side (X=0), Right side (X=24), Intermediate (X=12) brackets exist
+            var bracketXs = bracketsInt.Select(b => Math.Round(Math.Min(modelInt.Nodes[b.NodeA].X, modelInt.Nodes[b.NodeB].X), 2)).Distinct().ToList();
+            Assert.Contains(bracketXs, x => Math.Abs(x - 0.0) < 0.05);
+            Assert.Contains(bracketXs, x => Math.Abs(x - 12.0) < 0.05);
+            Assert.Contains(bracketXs, x => Math.Abs(x - 23.3) < 0.05 || Math.Abs(x - 24.0) < 0.05);
+
+            // Verify bracket Y is 4.5
+            Assert.All(bracketsInt, b => Assert.True(Math.Abs(modelInt.Nodes[b.NodeA].Y - 4.5) < 0.05));
+
+            // Verify STAAD output has _CABLETRAY and ISMC100
+            Assert.Contains("_CABLETRAY", stdInt);
+            Assert.Contains("TABLE ST ISMC100", stdInt);
+
+            // Test 2: Location = "all" with gable posts
+            var configAll = new PortalConfiguration
+            {
+                ModelName = "2D to 3D Cable Tray All",
+                GenerationMode = "convert2d",
+                Template2DStdText = std2DWithIntCol,
+                BaySpacingExpression = "2@6.0",
+                GableWalls = new GableWallConfiguration
+                {
+                    GableBaySpacingFront = "3",
+                    GableBaySpacingRear = "3"
+                },
+                CableTray = new CableTrayConfiguration
+                {
+                    Enabled = true,
+                    Location = "all",
+                    BracketHeight = 4.5,
+                    BracketLength = 0.7
+                }
+            };
+
+            var modelAll = builder.Build(configAll);
+            var bracketsAll = modelAll.Beams.Values.Where(b => b.Type == MemberType.CableTrayBracket).ToList();
+            Assert.True(bracketsAll.Count > bracketsInt.Count, "Location 'all' should generate more brackets than 'side_intermediate' due to gable posts");
+        }
+
+        [Fact]
+        public void Test_Convert2DTo3D_PortalBracing()
+        {
+            string std2D = @"STAAD SPACE
+START JOB INFORMATION
+ENGINEER DATE 28-Feb-25
+END JOB INFORMATION
+INPUT WIDTH 79
+UNIT METER KN
+JOINT COORDINATES
+1 0.0000 0.0000 0.0000;
+2 0.0000 2.2000 0.0000;
+3 0.0000 7.0000 0.0000;
+4 12.0000 8.2000 0.0000;
+5 24.0000 7.0000 0.0000;
+6 24.0000 2.2000 0.0000;
+7 24.0000 0.0000 0.0000;
+MEMBER INCIDENCES
+1 1 2;
+2 2 3;
+3 3 4;
+4 4 5;
+5 7 6;
+6 6 5;
+MEMBER PROPERTY INDIAN
+1 2 5 6 TAPERED 0.40 0.010 0.25 0.012 0.75 0.25 0.012
+3 4 TAPERED 0.75 0.010 0.25 0.012 0.40 0.25 0.012
+SUPPORTS
+1 7 FIXED
+PERFORM ANALYSIS
+FINISH";
+
+            var builder = new PortalGeometryBuilder();
+            var config = new PortalConfiguration
+            {
+                ModelName = "2D to 3D Portal Bracing Test",
+                GenerationMode = "convert2d",
+                Template2DStdText = std2D,
+                BaySpacingExpression = "4@6.0", // 4 bays: 0, 1, 2, 3. Length = 24m
+                Bracing = new BracingConfiguration
+                {
+                    IncludeRoofBracing = true,
+                    IncludeWallBracing = true,
+                    MaxBraceLength = 12.5,
+                    BracedBayIndices = new List<int> { 0, 3 },
+                    EnablePortalBracing = true,
+                    PortalBracingHeight = 4.5,
+                    PortalLegOffset = 0.5,
+                    PortalBracedBayIndices = new List<int> { 1 } // Portal in Bay 1 on both walls
+                }
+            };
+
+            var model = builder.Build(config);
+            string std = StaadStdWriter.GenerateStdText(model);
+
+            // 1. Verify Portal Header Beams: 2 walls * 3 segments = 6 beams at Y = 4.5
+            var portalBeams = model.Beams.Values.Where(b => b.Type == MemberType.PortalBeam).ToList();
+            Assert.Equal(6, portalBeams.Count);
+            foreach (var pb in portalBeams)
+            {
+                var nA = model.Nodes[pb.NodeA];
+                var nB = model.Nodes[pb.NodeB];
+                Assert.True(Math.Abs(nA.Y - 4.5) < 0.01 && Math.Abs(nB.Y - 4.5) < 0.01);
+            }
+
+            // 2. Verify Portal Legs: 2 walls * 2 legs = 4 legs connecting base to Y = 4.5
+            var portalLegs = model.Beams.Values.Where(b => b.Type == MemberType.PortalKneeBrace).ToList();
+            Assert.Equal(4, portalLegs.Count);
+            foreach (var leg in portalLegs)
+            {
+                var nA = model.Nodes[leg.NodeA];
+                var nB = model.Nodes[leg.NodeB];
+                double minY = Math.Min(nA.Y, nB.Y);
+                double maxY = Math.Max(nA.Y, nB.Y);
+                Assert.True(Math.Abs(minY - 0.0) < 0.01);
+                Assert.True(Math.Abs(maxY - 4.5) < 0.01);
+                // Verify end release exists for knee brace
+                Assert.Contains(leg.Id, model.EndReleaseMyMzBeamIds);
+            }
+
+            // 3. Verify upper cross-bracing in Bay 1 above portal beam (Y from 4.5 to 7.0)
+            var upperBracesBay1 = model.Beams.Values.Where(b => b.Type == MemberType.WallBracing &&
+                (Math.Abs(model.Nodes[b.NodeA].Y - 4.5) < 0.01 || Math.Abs(model.Nodes[b.NodeB].Y - 4.5) < 0.01)).ToList();
+            Assert.Equal(4, upperBracesBay1.Count);
+
+            // 4. Verify STAAD output contains portal groups and member properties
+            Assert.Contains("_PORTALBEAMS", std);
+            Assert.Contains("_PORTALLEGS", std);
+            Assert.Contains("TABLE ST ISMB350", std);
+            Assert.Contains("TABLE ST ISMC150", std);
+        }
+
+        [Fact]
+        public void Test_PortalBracing_LeftAndRightWall_Independent()
+        {
+            var builder = new PortalGeometryBuilder();
+            var config = new PortalConfiguration
+            {
+                ModelName = "Independent Left Right Portal Bracing",
+                BaySpacingExpression = "3@6.0", // bays 0, 1, 2
+                Bracing = new BracingConfiguration
+                {
+                    IncludeRoofBracing = false,
+                    IncludeWallBracing = true,
+                    MaxBraceLength = 12.5,
+                    BracedBayIndices = new List<int> { 0, 1, 2 },
+                    EnablePortalBracing = true,
+                    PortalBracingHeight = 4.0,
+                    PortalLegOffset = 0.5,
+                    PortalOnLeftWall = true,
+                    PortalOnRightWall = false, // Right wall disabled for portal bracing!
+                    PortalLeftBayIndices = new List<int> { 1 },
+                    PortalRightBayIndices = new List<int> { }
+                }
+            };
+
+            var model = builder.Build(config);
+
+            // Left wall (X = 0) should have portal beams
+            var leftPortalBeams = model.Beams.Values.Where(b => b.Type == MemberType.PortalBeam &&
+                Math.Abs(model.Nodes[b.NodeA].X - 0.0) < 0.05).ToList();
+            Assert.Equal(3, leftPortalBeams.Count); // 3 segments for 1 portal bay
+
+            // Right wall (X = 24) should have NO portal beams
+            var rightPortalBeams = model.Beams.Values.Where(b => b.Type == MemberType.PortalBeam &&
+                Math.Abs(model.Nodes[b.NodeA].X - 24.0) < 0.05).ToList();
+            Assert.Empty(rightPortalBeams);
+
+            // Right wall bay 1 should have standard full-height wall cross-bracing
+            var rightWallBracesInBay1 = model.Beams.Values.Where(b => b.Type == MemberType.WallBracing &&
+                Math.Abs(model.Nodes[b.NodeA].X - 24.0) < 0.05 &&
+                Math.Min(model.Nodes[b.NodeA].Z, model.Nodes[b.NodeB].Z) >= 5.9 &&
+                Math.Max(model.Nodes[b.NodeA].Z, model.Nodes[b.NodeB].Z) <= 12.1).ToList();
+            Assert.NotEmpty(rightWallBracesInBay1);
+        }
+
+        [Fact]
+        public void Test_ColumnOnlyBrokenWhenJackBeamIsConnected()
+        {
+            string std2D = @"STAAD SPACE
+START JOB INFORMATION
+ENGINEER DATE 28-Feb-25
+END JOB INFORMATION
+INPUT WIDTH 79
+UNIT METER KN
+JOINT COORDINATES
+1 0.0000 0.0000 0.0000;
+2 0.0000 7.0000 0.0000;
+3 12.0000 0.0000 0.0000;
+4 12.0000 8.2000 0.0000;
+5 24.0000 7.0000 0.0000;
+6 24.0000 0.0000 0.0000;
+MEMBER INCIDENCES
+1 1 2;
+2 2 4;
+3 4 5;
+4 6 5;
+5 3 4;
+MEMBER PROPERTY INDIAN
+1 4 TAPERED 0.40 0.010 0.25 0.012 0.75 0.25 0.012
+2 3 TAPERED 0.75 0.010 0.25 0.012 0.40 0.25 0.012
+5 TABLE ST ISMB400
+SUPPORTS
+1 6 FIXED
+3 PINNED
+PERFORM ANALYSIS
+FINISH";
+
+            var builder = new PortalGeometryBuilder();
+
+            // Scenario: Jack Portal enabled, but bay 0 (Z = 18 to 12) has a column at both ends (no skipped frames)
+            // Intermediate columns at Z = 18 and Z = 12.
+            // Bay 0 (Z=18 to 12) has NO jack beam.
+            // Bay 1 (Z=12 to 0) has a skipped frame at Z = 6, so a Jack Beam exists between 12 and 0.
+            var config = new PortalConfiguration
+            {
+                ModelName = "Jack Beam Break Test",
+                GenerationMode = "convert2d",
+                Template2DStdText = std2D,
+                BaySpacingExpression = "1@6.0 + 2@6.0", // Z = 18, 12, 6, 0
+                GableWalls = new GableWallConfiguration
+                {
+                    GableBaySpacingFront = "1@6+1@12+1@6", // Gable post at X = 6
+                    GableBaySpacingRear = "1@6+1@12+1@6"
+                },
+                JackPortal = new JackPortalConfiguration
+                {
+                    Enabled = true,
+                    IntermediateBaySpacingExpression = "1@6.0 + 1@12.0" // Full columns at Z = 18, 12, 0. Z = 6 skipped!
+                }
+            };
+
+            var model = builder.Build(config);
+
+            // 1. At Front Gable (Z = 18), Bay 0 (18 to 12) has NO skipped frame, so NO Jack Beam connects to Z = 18.
+            // The gable post at X = 6 on Z = 18 has NO Jack Beam -> MUST NOT be broken at Y = 7.2m (1m below rafter).
+            var gableNodesAt18 = model.Nodes.Values.Where(n => Math.Abs(n.X - 6.0) < 0.05 && Math.Abs(n.Z - 18.0) < 0.05).ToList();
+            // Should only have base (Y=0) and rafter (Y=7.6m), NO node at Y ~ 6.6m!
+            Assert.DoesNotContain(gableNodesAt18, n => Math.Abs(n.Y - 6.6) < 0.1);
+
+            // The gable post member at X = 6, Z = 18 should be a single member connecting base to rafter
+            var gableBeamsAt18 = model.Beams.Values.Where(b => b.Type == MemberType.GablePost &&
+                Math.Abs(model.Nodes[b.NodeA].X - 6.0) < 0.05 && Math.Abs(model.Nodes[b.NodeB].X - 6.0) < 0.05 &&
+                Math.Abs(model.Nodes[b.NodeA].Z - 18.0) < 0.05).ToList();
+            Assert.Single(gableBeamsAt18);
+
+            // 2. Gable post at X = 18 on Z = 18 also has NO Jack Beam -> MUST NOT be broken!
+            var gableBeamsX18At18 = model.Beams.Values.Where(b => b.Type == MemberType.GablePost &&
+                Math.Abs(model.Nodes[b.NodeA].X - 18.0) < 0.05 && Math.Abs(model.Nodes[b.NodeB].X - 18.0) < 0.05 &&
+                Math.Abs(model.Nodes[b.NodeA].Z - 18.0) < 0.05).ToList();
+            Assert.Single(gableBeamsX18At18);
+
+            // 3. At Z = 12, a Jack Beam DOES connect (spanning from Z = 12 across Z = 6 to Z = 0)!
+            // Therefore, the column at X = 12, Z = 12 MUST be broken at Y = 7.2m to connect the Jack Beam!
+            var intColNodesAt12 = model.Nodes.Values.Where(n => Math.Abs(n.X - 12.0) < 0.05 && Math.Abs(n.Z - 12.0) < 0.05).ToList();
+            Assert.Contains(intColNodesAt12, n => Math.Abs(n.Y - 7.2) < 0.1);
+
+            var intColBeamsAt12 = model.Beams.Values.Where(b => b.Type == MemberType.IntermediateColumn &&
+                Math.Abs(model.Nodes[b.NodeA].X - 12.0) < 0.05 && Math.Abs(model.Nodes[b.NodeB].X - 12.0) < 0.05 &&
+                Math.Abs(model.Nodes[b.NodeA].Z - 12.0) < 0.05).ToList();
+            Assert.Equal(2, intColBeamsAt12.Count); // Broken into 2 segments!
+
+            // 4. When Jack Portal is disabled completely, intermediate column at Z = 12 MUST NOT be broken
+            var configNoJack = new PortalConfiguration
+            {
+                ModelName = "No Jack Test",
+                GenerationMode = "convert2d",
+                Template2DStdText = std2D,
+                BaySpacingExpression = "1@6.0 + 2@6.0",
+                JackPortal = new JackPortalConfiguration { Enabled = false }
+            };
+            var modelNoJack = builder.Build(configNoJack);
+            var intColNodesNoJack = modelNoJack.Nodes.Values.Where(n => Math.Abs(n.X - 12.0) < 0.05 && Math.Abs(n.Z - 12.0) < 0.05).ToList();
+            Assert.DoesNotContain(intColNodesNoJack, n => Math.Abs(n.Y - 7.2) < 0.1);
+
+            var intColBeamsNoJack = modelNoJack.Beams.Values.Where(b => b.Type == MemberType.IntermediateColumn &&
+                Math.Abs(modelNoJack.Nodes[b.NodeA].X - 12.0) < 0.05 && Math.Abs(modelNoJack.Nodes[b.NodeB].X - 12.0) < 0.05 &&
+                Math.Abs(modelNoJack.Nodes[b.NodeA].Z - 12.0) < 0.05).ToList();
+            Assert.Single(intColBeamsNoJack); // Single continuous member!
+        }
+
+        [Fact]
+        public void Test_Parametric_ColumnOnlyBrokenWhenJackBeamIsConnected()
+        {
+            var builder = new PortalGeometryBuilder();
+
+            // Parametric Portal Modeler configuration
+            // 24m width, 7m eave, 8.2m ridge -> at X = 12 (ridge), top rafter Y = 8.2m.
+            // Tie Y for Jack Beam = 8.2 - 1.0 = 7.2m.
+            var config = new PortalConfiguration
+            {
+                ModelName = "Parametric Jack Beam Break Test",
+                Spans = new List<SpanDefinition> { new SpanDefinition(24.0, 7.0, 8.2) },
+                RccWallHeight = 0.0,
+                WidthModuleExpression = "2@12", // Intermediate column line at X = 12
+                BaySpacingExpression = "1@6.0 + 2@6.0", // Frames at Z = 18, 12, 6, 0
+                GableWalls = new GableWallConfiguration
+                {
+                    GableBaySpacingFront = "1@6+1@12+1@6", // Gable posts at X = 6 and X = 18
+                    GableBaySpacingRear = "1@6+1@12+1@6"
+                },
+                JackPortal = new JackPortalConfiguration
+                {
+                    Enabled = true,
+                    IntermediateBaySpacingExpression = "1@6.0 + 1@12.0" // Columns at Z = 18, 12, 0. Z = 6 skipped!
+                }
+            };
+
+            var model = builder.Build(config);
+
+            // 1. At Front Gable (Z = 18), Gable post at X = 6 has NO Jack Beam connected.
+            // MUST NOT have node inserted at Y = topY - 1.0 (~ 6.6m) and MUST NOT be broken!
+            var gableNodesAt18 = model.Nodes.Values.Where(n => Math.Abs(n.X - 6.0) < 0.05 && Math.Abs(n.Z - 18.0) < 0.05).ToList();
+            Assert.DoesNotContain(gableNodesAt18, n => Math.Abs(n.Y - 6.6) < 0.1);
+
+            var gableBeamsAt18 = model.Beams.Values.Where(b => b.Type == MemberType.GablePost &&
+                Math.Abs(model.Nodes[b.NodeA].X - 6.0) < 0.05 && Math.Abs(model.Nodes[b.NodeB].X - 6.0) < 0.05 &&
+                Math.Abs(model.Nodes[b.NodeA].Z - 18.0) < 0.05).ToList();
+            Assert.Single(gableBeamsAt18);
+
+            // 2. Intermediate column at X = 12, Z = 12 DOES connect to a Jack Beam (spanning Z = 12 to 0).
+            // Therefore, it MUST have a node inserted at Y = topY - 1.0m and MUST be broken into 2 segments!
+            var intColNodesAt12 = model.Nodes.Values.Where(n => Math.Abs(n.X - 12.0) < 0.05 && Math.Abs(n.Z - 12.0) < 0.05).ToList();
+            var topModNode = intColNodesAt12.OrderByDescending(n => n.Y).First();
+            double expectedTieY = Math.Round(topModNode.Y - 1.0, 4);
+            Assert.Contains(intColNodesAt12, n => Math.Abs(n.Y - expectedTieY) < 0.1);
+
+            var intColBeamsAt12 = model.Beams.Values.Where(b => b.Type == MemberType.IntermediateColumn &&
+                Math.Abs(model.Nodes[b.NodeA].X - 12.0) < 0.05 && Math.Abs(model.Nodes[b.NodeB].X - 12.0) < 0.05 &&
+                Math.Abs(model.Nodes[b.NodeA].Z - 12.0) < 0.05).ToList();
+            Assert.Equal(2, intColBeamsAt12.Count);
+
+            // 3. When Jack Portal is disabled, intermediate column at Z = 12 MUST NOT be broken and NO node at Y = expectedTieY
+            var configNoJack = new PortalConfiguration
+            {
+                ModelName = "Parametric No Jack Test",
+                Spans = new List<SpanDefinition> { new SpanDefinition(24.0, 7.0, 8.2) },
+                RccWallHeight = 0.0,
+                WidthModuleExpression = "2@12",
+                BaySpacingExpression = "1@6.0 + 2@6.0",
+                JackPortal = new JackPortalConfiguration { Enabled = false }
+            };
+            var modelNoJack = builder.Build(configNoJack);
+
+            var intColNodesNoJack = modelNoJack.Nodes.Values.Where(n => Math.Abs(n.X - 12.0) < 0.05 && Math.Abs(n.Z - 12.0) < 0.05).ToList();
+            Assert.DoesNotContain(intColNodesNoJack, n => Math.Abs(n.Y - expectedTieY) < 0.1);
+
+            var intColBeamsNoJack = modelNoJack.Beams.Values.Where(b => b.Type == MemberType.IntermediateColumn &&
+                Math.Abs(modelNoJack.Nodes[b.NodeA].X - 12.0) < 0.05 && Math.Abs(modelNoJack.Nodes[b.NodeB].X - 12.0) < 0.05 &&
+                Math.Abs(modelNoJack.Nodes[b.NodeA].Z - 12.0) < 0.05).ToList();
+            Assert.Single(intColBeamsNoJack);
+        }
+
+        [Fact]
+        public void Test_FourSideCanopy_GenerationAndBayFiltering()
+        {
+            var builder = new PortalGeometryBuilder();
+
+            // 24m span, 3 bays of 6m each (Z = 18, 12, 6, 0).
+            // Bays: Bay 0 (Z: 18 to 12), Bay 1 (Z: 12 to 6), Bay 2 (Z: 6 to 0).
+            // Gable posts at Front and Rear at X = 8, 16. (3 transverse bays: 0-8, 8-16, 16-24).
+            var config = new PortalConfiguration
+            {
+                ModelName = "4-Side Canopy Test",
+                Spans = new List<SpanDefinition> { new SpanDefinition(24.0, 7.0, 8.2) },
+                BaySpacingExpression = "3@6.0",
+                GableWalls = new GableWallConfiguration
+                {
+                    GableBaySpacingFront = "8.0, 8.0",
+                    GableBaySpacingRear = "8.0, 8.0"
+                },
+                Canopy = new CanopyConfiguration
+                {
+                    LeftWall = new CanopySideConfiguration
+                    {
+                        Enabled = true,
+                        Height = 5.0,
+                        Projection = 4.0,
+                        Drop = 0.2,
+                        BayExpression = "0, 1" // Only bays 0 and 1! Frame 0, 1, 2 have rafters. Frame 3 (Z=0) does not!
+                    },
+                    RightWall = new CanopySideConfiguration
+                    {
+                        Enabled = true,
+                        Height = 5.0,
+                        Projection = 3.5,
+                        Drop = 0.2,
+                        BayExpression = "2" // Only bay 2! Frame 2, 3 have rafters. Frame 0, 1 do not!
+                    },
+                    FrontWall = new CanopySideConfiguration
+                    {
+                        Enabled = true,
+                        Height = 4.5,
+                        Projection = 3.0,
+                        Drop = 0.2,
+                        BayExpression = "0" // Only transverse bay 0 (X: 0 to 8)!
+                    },
+                    RearWall = new CanopySideConfiguration
+                    {
+                        Enabled = true,
+                        Height = 4.5,
+                        Projection = 3.0,
+                        Drop = 0.2,
+                        BayExpression = "" // All transverse bays!
+                    }
+                }
+            };
+
+            var model = builder.Build(config);
+
+            // 1. Verify Canopy Members Exist
+            var canopyRafters = model.Beams.Values.Where(b => b.Type == MemberType.CanopyRafter).ToList();
+            var canopyRunners = model.Beams.Values.Where(b => b.Type == MemberType.CanopyRunner).ToList();
+            var canopyBracings = model.Beams.Values.Where(b => b.Type == MemberType.CanopyBracing).ToList();
+
+            Assert.NotEmpty(canopyRafters);
+            Assert.NotEmpty(canopyRunners);
+            Assert.NotEmpty(canopyBracings);
+
+            // 2. Left Wall Canopies (X = 0, projecting to X = -4.0):
+            // Active bays: 0 (Z: 18-12) and 1 (Z: 12-6).
+            // Rafters at frames 0 (Z=18), 1 (Z=12), 2 (Z=6).
+            // NO rafter at frame 3 (Z=0).
+            var leftRafters = canopyRafters.Where(b =>
+                (model.Nodes[b.NodeA].X < -0.1 || model.Nodes[b.NodeB].X < -0.1)).ToList();
+            Assert.Equal(3, leftRafters.Count);
+            Assert.Contains(leftRafters, b => Math.Abs(model.Nodes[b.NodeA].Z - 18.0) < 0.1 || Math.Abs(model.Nodes[b.NodeB].Z - 18.0) < 0.1);
+            Assert.Contains(leftRafters, b => Math.Abs(model.Nodes[b.NodeA].Z - 12.0) < 0.1 || Math.Abs(model.Nodes[b.NodeB].Z - 12.0) < 0.1);
+            Assert.Contains(leftRafters, b => Math.Abs(model.Nodes[b.NodeA].Z - 6.0) < 0.1 || Math.Abs(model.Nodes[b.NodeB].Z - 6.0) < 0.1);
+            Assert.DoesNotContain(leftRafters, b => Math.Abs(model.Nodes[b.NodeA].Z - 0.0) < 0.1 && Math.Abs(model.Nodes[b.NodeB].Z - 0.0) < 0.1);
+
+            // 3. Right Wall Canopies (X = 24.0, projecting to X = 27.5):
+            // Active bay: 2 (Z: 6 to 0).
+            // Rafters at frames 2 (Z=6) and 3 (Z=0).
+            // NO rafter at frame 0 (Z=18) or 1 (Z=12).
+            var rightRafters = canopyRafters.Where(b =>
+                (model.Nodes[b.NodeA].X > 24.1 || model.Nodes[b.NodeB].X > 24.1)).ToList();
+            Assert.Equal(2, rightRafters.Count);
+            Assert.Contains(rightRafters, b => Math.Abs(model.Nodes[b.NodeA].Z - 6.0) < 0.1 || Math.Abs(model.Nodes[b.NodeB].Z - 6.0) < 0.1);
+            Assert.Contains(rightRafters, b => Math.Abs(model.Nodes[b.NodeA].Z - 0.0) < 0.1 || Math.Abs(model.Nodes[b.NodeB].Z - 0.0) < 0.1);
+            Assert.DoesNotContain(rightRafters, b => Math.Abs(model.Nodes[b.NodeA].Z - 18.0) < 0.1);
+
+            // 4. Front Wall Canopies (Z = 18.0, projecting to Z = 21.0):
+            // Transverse posts at X = 0, 8, 16, 24. Bay 0 is X: 0 to 8.
+            // Rafters at post 0 (X=0) and post 1 (X=8).
+            var frontRafters = canopyRafters.Where(b =>
+                (model.Nodes[b.NodeA].Z > 18.1 || model.Nodes[b.NodeB].Z > 18.1)).ToList();
+            Assert.Equal(2, frontRafters.Count);
+            Assert.Contains(frontRafters, b => Math.Abs(model.Nodes[b.NodeA].X - 0.0) < 0.1 || Math.Abs(model.Nodes[b.NodeB].X - 0.0) < 0.1);
+            Assert.Contains(frontRafters, b => Math.Abs(model.Nodes[b.NodeA].X - 8.0) < 0.1 || Math.Abs(model.Nodes[b.NodeB].X - 8.0) < 0.1);
+
+            // 5. Rear Wall Canopies (Z = 0.0, projecting to Z = -3.0):
+            // All transverse bays enabled: rafters at X = 0, 8, 16, 24. (4 rafters).
+            var rearRafters = canopyRafters.Where(b =>
+                (model.Nodes[b.NodeA].Z < -0.1 || model.Nodes[b.NodeB].Z < -0.1)).ToList();
+            Assert.Equal(4, rearRafters.Count);
+
+            // 6. Verify STAAD writer writes _CANOPY group
+            var stdContent = StaadPortalEngine.Exporters.StaadStdWriter.GenerateStdText(model);
+            Assert.Contains("START GROUP DEFINITION", stdContent);
+            Assert.Contains("_CANOPY", stdContent);
+            Assert.Contains("TABLE ST ISMB200", stdContent);
+            Assert.Contains("TABLE ST ISMC125", stdContent);
+            Assert.Contains("TABLE ST ISA50X50X6", stdContent);
+        }
+
+        [Fact]
+        public void Test_BreakMembersAtJoints_InterpolatesTaperedSections()
+        {
+            // Verify that members passing through joint locations are broken into sub-members,
+            // and if a tapered section property was assigned, it is interpolated accurately at the joint
+            // ensuring depth continuity across connected sub-members.
+            string std2D = @"STAAD SPACE
+START JOB INFORMATION
+ENGINEER DATE 06-Sep-26
+JOB NAME 2D Tapered Frame
+END JOB INFORMATION
+INPUT WIDTH 79
+UNIT METER KN
+JOINT COORDINATES
+1 0.0000 0.0000 0.0000;
+2 0.0000 6.0000 0.0000;
+3 12.0000 7.2000 0.0000;
+4 24.0000 6.0000 0.0000;
+5 24.0000 0.0000 0.0000;
+MEMBER INCIDENCES
+1 1 2;
+2 2 3;
+3 3 4;
+4 5 4;
+MEMBER PROPERTY INDIAN
+1 4 TAPERED 0.40 0.008 0.20 0.012 0.75 0.20 0.012
+2 TAPERED 0.75 0.008 0.20 0.012 0.40 0.20 0.012
+3 TAPERED 0.40 0.008 0.20 0.012 0.75 0.20 0.012
+SUPPORTS
+1 5 FIXED
+PERFORM ANALYSIS
+FINISH";
+
+            var builder = new PortalGeometryBuilder();
+            var config = new PortalConfiguration
+            {
+                ModelName = "Tapered Joint Break Model",
+                GenerationMode = "convert2d",
+                Template2DStdText = std2D,
+                BaySpacingExpression = "1@6.0", // 1 bay = 2 frames at Z = 6.0 and Z = 0.0
+                GableWalls = new GableWallConfiguration
+                {
+                    GableBaySpacingFront = "6.0", // Gable posts at X = 6, 12, 18
+                    GableBaySpacingRear = "6.0"
+                }
+            };
+
+            var model = builder.Build(config);
+            Assert.NotNull(model);
+
+            // Gable posts were inserted at X = 6.0 and X = 18.0.
+            // Therefore, the rafter between X=0 and X=12 must be broken at X=6.0!
+            var frontRaftersLeft = model.Beams.Values
+                .Where(b => b.Type == MemberType.Rafter &&
+                            Math.Abs(model.Nodes[b.NodeA].Z - 6.0) < 0.1 &&
+                            model.Nodes[b.NodeA].X <= 12.0 && model.Nodes[b.NodeB].X <= 12.0)
+                .OrderBy(b => Math.Min(model.Nodes[b.NodeA].X, model.Nodes[b.NodeB].X))
+                .ToList();
+
+            // Must have 2 segments: (0 -> 6) and (6 -> 12)
+            Assert.Equal(2, frontRaftersLeft.Count);
+
+            var seg1 = frontRaftersLeft[0]; // 0 to 6
+            var seg2 = frontRaftersLeft[1]; // 6 to 12
+
+            Assert.Contains("TAPERED", seg1.SectionProperty);
+            Assert.Contains("TAPERED", seg2.SectionProperty);
+
+            // Parse depths:
+            // Original: start depth = 0.75, end depth = 0.40
+            // At X=6 (t=0.5): depth should be 0.75 + 0.5*(0.40 - 0.75) = 0.575
+            // So seg1: start=0.75, end=0.575
+            // seg2: start=0.575, end=0.40
+            var seg1Parts = seg1.SectionProperty.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var seg2Parts = seg2.SectionProperty.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            double seg1DStart = double.Parse(seg1Parts[1], System.Globalization.CultureInfo.InvariantCulture);
+            double seg1DEnd = double.Parse(seg1Parts[5], System.Globalization.CultureInfo.InvariantCulture);
+
+            double seg2DStart = double.Parse(seg2Parts[1], System.Globalization.CultureInfo.InvariantCulture);
+            double seg2DEnd = double.Parse(seg2Parts[5], System.Globalization.CultureInfo.InvariantCulture);
+
+            Assert.Equal(0.75, seg1DStart, 3);
+            Assert.Equal(0.575, seg1DEnd, 3);
+            Assert.Equal(0.575, seg2DStart, 3);
+            Assert.Equal(0.40, seg2DEnd, 3);
+
+            // Verify continuous junction depth
+            Assert.Equal(seg1DEnd, seg2DStart, 3);
+
+            // Verify STAAD .std output contains both interpolated sections
+            string std = StaadPortalEngine.Exporters.StaadStdWriter.GenerateStdText(model);
+            Assert.Contains("TAPERED 0.75", std);
+            Assert.Contains("0.575", std);
+        }
     }
 }
+

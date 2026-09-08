@@ -6,12 +6,18 @@ namespace StaadPortalEngine.Helpers
     public static class SpacingParser
     {
         /// <summary>
-        /// Parses bay spacing expressions like "5@6+5@4", "5@6, 5@4", "6.0, 7.5, 7.5, 6.0", or "4*6".
+        /// Parses bay spacing expressions like "5@6+5@4", "5@6, 5@4", "6.0, 7.5, 7.5, 6.0", "4*6", or "0" for single mid frame.
         /// </summary>
         public static List<double> ParseBaySpacings(string input)
         {
             var result = new List<double>();
             if (string.IsNullOrWhiteSpace(input)) return new List<double> { 6.0, 6.0, 6.0, 6.0 };
+
+            var trimmed = input.Trim();
+            if (trimmed == "0" || trimmed == "0.0" || (double.TryParse(trimmed, out double singleZero) && singleZero == 0.0 && !trimmed.Contains('@') && !trimmed.Contains('*')))
+            {
+                return new List<double>();
+            }
 
             var tokens = input.Split(new[] { '+', ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var rawToken in tokens)
@@ -33,6 +39,11 @@ namespace StaadPortalEngine.Helpers
                 {
                     result.Add(val);
                 }
+            }
+
+            if (result.Count == 0 && (trimmed == "0" || trimmed == "0.0" || (double.TryParse(trimmed, out double zeroVal) && zeroVal == 0.0)))
+            {
+                return new List<double>();
             }
 
             return result.Count > 0 ? result : new List<double> { 6.0, 6.0, 6.0, 6.0 };
@@ -73,6 +84,40 @@ namespace StaadPortalEngine.Helpers
             }
 
             return offsets;
+        }
+
+        /// <summary>
+        /// Parses a list of 0-indexed bay numbers e.g. "0, 1, 2", "1-3", "0; 2; 4".
+        /// </summary>
+        public static List<int> ParseBayIndices(string input)
+        {
+            var indices = new List<int>();
+            if (string.IsNullOrWhiteSpace(input)) return indices;
+
+            var tokens = input.Split(new[] { ',', ';', ' ', '+' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var token in tokens)
+            {
+                var t = token.Trim();
+                if (t.Contains('-') && !t.StartsWith("-"))
+                {
+                    var range = t.Split('-');
+                    if (range.Length == 2 && int.TryParse(range[0].Trim(), out int start) && int.TryParse(range[1].Trim(), out int end))
+                    {
+                        for (int i = Math.Min(start, end); i <= Math.Max(start, end); i++)
+                        {
+                            if (!indices.Contains(i)) indices.Add(i);
+                        }
+                        continue;
+                    }
+                }
+
+                if (int.TryParse(t, out int val) && val >= 0)
+                {
+                    if (!indices.Contains(val)) indices.Add(val);
+                }
+            }
+            indices.Sort();
+            return indices;
         }
     }
 }

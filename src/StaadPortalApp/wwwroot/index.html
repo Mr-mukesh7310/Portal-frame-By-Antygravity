@@ -549,6 +549,17 @@
             <span>🏗️ STAAD.Pro 3D Portal Modeler</span>
             <span class="badge">OpenSTAAD Ready</span>
         </div>
+
+        <!-- Mode Switcher -->
+        <div class="mode-switcher" style="display: flex; background: rgba(0,0,0,0.35); padding: 3px; border-radius: 6px; border: 1px solid var(--border); gap: 4px;">
+            <button id="btnModeParametric" class="btn-mode active" onclick="switchMode('parametric')" style="padding: 5px 12px; font-size: 0.80rem; border-radius: 4px; border: none; cursor: pointer; font-weight: 600; background: var(--primary); color: white; transition: all 0.2s ease;">
+                🏗️ Parametric Modeler
+            </button>
+            <button id="btnModeConvert2D" class="btn-mode" onclick="switchMode('convert2d')" style="padding: 5px 12px; font-size: 0.80rem; border-radius: 4px; border: none; cursor: pointer; font-weight: 600; background: transparent; color: var(--text-muted); transition: all 0.2s ease;">
+                🔄 2D to 3D Converter
+            </button>
+        </div>
+
         <div class="header-actions">
             <label style="font-size: 0.82rem; color: var(--text-muted);">Preset:</label>
             <select id="presetSelect" onchange="loadPreset(this.value)">
@@ -572,8 +583,39 @@
         <!-- Sidebar Controls -->
         <div class="sidebar" id="sidebarPanel">
             
+            <!-- 2D Model Import & Parameter Extraction (Visible in 2D-to-3D mode) -->
+            <div class="section-box" id="sectionConvert2D" style="display: none; border-color: #00cec9; background: rgba(0, 206, 201, 0.05);">
+                <div class="section-title" style="color: #00cec9; display: flex; justify-content: space-between; align-items: center;">
+                    <span>🔄 2D Frame Import (.std)</span>
+                    <span id="badge2DLoaded" style="font-size: 0.70rem; padding: 2px 6px; border-radius: 4px; background: rgba(0, 206, 201, 0.2); color: #00cec9;">Ready</span>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                    <div style="display: flex; gap: 6px;">
+                        <input type="file" id="fileInput2D" accept=".std,.txt" style="display: none;" onchange="handle2DFileUpload(event)">
+                        <button class="btn-outline" style="flex: 1; border-color: #00cec9; color: #00cec9; font-size: 0.76rem;" onclick="document.getElementById('fileInput2D').click()">
+                            📁 Upload 2D .std
+                        </button>
+                        <button class="btn-outline" style="flex: 1; border-color: #74b9ff; color: #74b9ff; font-size: 0.76rem;" onclick="openPaste2DModal()">
+                            📋 Paste Code
+                        </button>
+                    </div>
+
+                    <button class="btn-outline" style="border-color: #f1c40f; color: #f1c40f; font-size: 0.76rem; width: 100%;" onclick="loadSample2DFrame()">
+                        ⚡ Load Sample 2D PEB Frame (Tapered)
+                    </button>
+
+                    <!-- Extracted 2D Info Card -->
+                    <div id="card2DInfo" style="background: rgba(18, 24, 36, 0.85); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 0.74rem; display: flex; flex-direction: column; gap: 4px;">
+                        <div style="color: #74b9ff; font-weight: 700;" id="txt2DFrameName">2D PEB Portal Frame</div>
+                        <div id="txt2DFrameDetails" style="color: var(--text-muted);">Span: 24.0m | Eave: 7.0m | Ridge: 8.2m</div>
+                        <div id="txt2DSections" style="color: #55efc4; font-size: 0.70rem; word-break: break-all;">Tapered PEB rafters & columns</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 1. Primary Frame Dimensions -->
-            <div class="section-box">
+            <div class="section-box" id="sectionPrimaryDimensions">
                 <div class="section-title">1. Primary Frame Dimensions</div>
                 
                 <div class="input-row">
@@ -731,9 +773,21 @@
                         <span class="input-label">Portal Leg Offset [m]:</span>
                         <input type="number" id="portalLegOffset" class="input-control" value="0.5" step="0.05" min="0.1" max="2.0" oninput="updateModel()">
                     </div>
+                    <div class="input-row" style="margin-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 5px;">
+                        <span class="input-label">Portal Bracing Left Wall:</span>
+                        <input type="checkbox" id="portalLeftWall" checked onchange="updateModel()">
+                    </div>
                     <div class="input-row">
-                        <span class="input-label">Portal Bays (0-idx):</span>
-                        <input type="text" id="portalBays" class="input-control" value="2" oninput="updateModel()" placeholder="e.g. 2 or 1, 2">
+                        <span class="input-label">Braced Bays (0-idx):</span>
+                        <input type="text" id="portalLeftBays" class="input-control" value="2" oninput="updateModel()" placeholder="e.g. 2 or 1, 2">
+                    </div>
+                    <div class="input-row" style="margin-top: 6px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 5px;">
+                        <span class="input-label">Portal Bracing Right Wall:</span>
+                        <input type="checkbox" id="portalRightWall" checked onchange="updateModel()">
+                    </div>
+                    <div class="input-row">
+                        <span class="input-label">Braced Bays (0-idx):</span>
+                        <input type="text" id="portalRightBays" class="input-control" value="2" oninput="updateModel()" placeholder="e.g. 2 or 1, 2">
                     </div>
                 </div>
             </div>
@@ -756,6 +810,120 @@
                 <div class="input-row">
                     <span class="input-label">Mezzanine Bays:</span>
                     <input type="text" id="mezzanineBays" class="input-control" value="0, 1" oninput="updateModel()">
+                </div>
+            </div>
+
+            <!-- 6. Canopy Layout -->
+            <div class="section-box">
+                <div class="section-title">6. Canopy Layout</div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">Configure cantilever canopies on any of the 4 building sides:</div>
+                
+                <!-- Left Wall Canopy (X = 0) -->
+                <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; margin-bottom: 8px; background: rgba(255,255,255,0.02);">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <label style="font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" id="canopyLeftEnabled" onchange="toggleCanopyUI('Left'); updateModel();"> Left Wall Canopy (X = 0)
+                        </label>
+                    </div>
+                    <div id="canopyLeftControls" style="display: none; margin-top: 8px; border-top: 1px dashed var(--border-color); padding-top: 6px;">
+                        <div class="input-row">
+                            <span class="input-label">Height [m]:</span>
+                            <input type="number" id="canopyLeftHeight" class="input-control" value="5.0" step="0.2" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Projection [m]:</span>
+                            <input type="number" id="canopyLeftProjection" class="input-control" value="4.0" step="0.2" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Drop [m]:</span>
+                            <input type="number" id="canopyLeftDrop" class="input-control" value="0.2" step="0.05" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Canopy Bays (0-idx):</span>
+                            <input type="text" id="canopyLeftBays" class="input-control" value="" placeholder="e.g. 0, 1 or empty for all" oninput="updateModel()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Wall Canopy (X = Width) -->
+                <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; margin-bottom: 8px; background: rgba(255,255,255,0.02);">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <label style="font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" id="canopyRightEnabled" onchange="toggleCanopyUI('Right'); updateModel();"> Right Wall Canopy (X = Width)
+                        </label>
+                    </div>
+                    <div id="canopyRightControls" style="display: none; margin-top: 8px; border-top: 1px dashed var(--border-color); padding-top: 6px;">
+                        <div class="input-row">
+                            <span class="input-label">Height [m]:</span>
+                            <input type="number" id="canopyRightHeight" class="input-control" value="5.0" step="0.2" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Projection [m]:</span>
+                            <input type="number" id="canopyRightProjection" class="input-control" value="4.0" step="0.2" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Drop [m]:</span>
+                            <input type="number" id="canopyRightDrop" class="input-control" value="0.2" step="0.05" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Canopy Bays (0-idx):</span>
+                            <input type="text" id="canopyRightBays" class="input-control" value="" placeholder="e.g. 0, 1 or empty for all" oninput="updateModel()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Front Wall Canopy (Z = Length) -->
+                <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; margin-bottom: 8px; background: rgba(255,255,255,0.02);">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <label style="font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" id="canopyFrontEnabled" onchange="toggleCanopyUI('Front'); updateModel();"> Front Wall Canopy (Z = Length)
+                        </label>
+                    </div>
+                    <div id="canopyFrontControls" style="display: none; margin-top: 8px; border-top: 1px dashed var(--border-color); padding-top: 6px;">
+                        <div class="input-row">
+                            <span class="input-label">Height [m]:</span>
+                            <input type="number" id="canopyFrontHeight" class="input-control" value="5.0" step="0.2" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Projection [m]:</span>
+                            <input type="number" id="canopyFrontProjection" class="input-control" value="4.0" step="0.2" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Drop [m]:</span>
+                            <input type="number" id="canopyFrontDrop" class="input-control" value="0.2" step="0.05" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Canopy Bays (0-idx):</span>
+                            <input type="text" id="canopyFrontBays" class="input-control" value="" placeholder="e.g. 0, 1 or empty for all" oninput="updateModel()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Rear Wall Canopy (Z = 0) -->
+                <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; margin-bottom: 8px; background: rgba(255,255,255,0.02);">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <label style="font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" id="canopyRearEnabled" onchange="toggleCanopyUI('Rear'); updateModel();"> Rear Wall Canopy (Z = 0)
+                        </label>
+                    </div>
+                    <div id="canopyRearControls" style="display: none; margin-top: 8px; border-top: 1px dashed var(--border-color); padding-top: 6px;">
+                        <div class="input-row">
+                            <span class="input-label">Height [m]:</span>
+                            <input type="number" id="canopyRearHeight" class="input-control" value="5.0" step="0.2" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Projection [m]:</span>
+                            <input type="number" id="canopyRearProjection" class="input-control" value="4.0" step="0.2" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Drop [m]:</span>
+                            <input type="number" id="canopyRearDrop" class="input-control" value="0.2" step="0.05" oninput="updateModel()">
+                        </div>
+                        <div class="input-row">
+                            <span class="input-label">Canopy Bays (0-idx):</span>
+                            <input type="text" id="canopyRearBays" class="input-control" value="" placeholder="e.g. 0, 1 or empty for all" oninput="updateModel()">
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -805,6 +973,7 @@
                 <div class="legend-item"><div class="legend-color" style="background:#0984e3"></div><span>Gable Posts</span></div>
                 <div class="legend-item"><div class="legend-color" style="background:#1abc9c"></div><span>Portal Bracing</span></div>
                 <div class="legend-item"><div class="legend-color" style="background:#9b59b6"></div><span>Mezzanine</span></div>
+                <div class="legend-item"><div class="legend-color" style="background:#00d2d3"></div><span>Canopies</span></div>
             </div>
         </div>
     </div>
@@ -850,7 +1019,10 @@
             'MezzanineSecondaryBeam': 0x8e44ad,
             'MezzanineColumn': 0xbe2edd,
             'JackBeam': 0xffa502,
-            'JackTieBeam': 0x2ed573
+            'JackTieBeam': 0x2ed573,
+            'CanopyRafter': 0x00d2d3,
+            'CanopyRunner': 0x54a0ff,
+            'CanopyBracing': 0xff9f43
         };
 
         let scene, camera, renderer, controls;
@@ -1062,9 +1234,22 @@
             updateModel();
         }
 
+        function togglePortalBracingUI() {
+            const isChecked = document.getElementById('portalBracing')?.checked;
+            const div = document.getElementById('portalBracingInputs');
+            if (div) {
+                div.style.display = isChecked ? 'block' : 'none';
+            }
+        }
+
         function parseBayExpression(input) {
             const result = [];
             if (!input || !input.trim()) return [24.0];
+
+            const trimmed = input.trim();
+            if (trimmed === '0' || trimmed === '0.0' || (parseFloat(trimmed) === 0 && !trimmed.includes('+') && !trimmed.includes(',') && !trimmed.includes(';') && !trimmed.includes('@') && !trimmed.includes('*'))) {
+                return [];
+            }
 
             const tokens = input.split(/[+,;]+/);
             for (const rawToken of tokens) {
@@ -1083,6 +1268,9 @@
                     const val = parseFloat(t);
                     if (!isNaN(val) && val > 0) result.push(val);
                 }
+            }
+            if (result.length === 0 && (trimmed === '0' || trimmed === '0.0' || parseFloat(trimmed) === 0)) {
+                return [];
             }
             return result.length > 0 ? result : [24.0];
         }
@@ -1162,10 +1350,17 @@
                     `📐 Clear Span (No Intermediate Columns)`;
             }
 
-            const baySpacings = parseBayExpression(document.getElementById('baySpacings').value);
+            const bayInputVal = document.getElementById('baySpacings').value.trim();
+            const baySpacings = parseBayExpression(bayInputVal);
             const totalBayLen = baySpacings.reduce((a, b) => a + b, 0);
-            document.getElementById('baySummaryBadge').innerText = 
-                `📏 ${baySpacings.length} Bays: ${document.getElementById('baySpacings').value} (Length: ${totalBayLen.toFixed(1)}m)`;
+
+            if (baySpacings.length === 0 || bayInputVal === '0' || bayInputVal === '0.0') {
+                document.getElementById('baySummaryBadge').innerText = 
+                    `🏛️ Single Mid Frame (0 Bays, Z = 0.0m)`;
+            } else {
+                document.getElementById('baySummaryBadge').innerText = 
+                    `📏 ${baySpacings.length} Bays: ${bayInputVal} (Length: ${totalBayLen.toFixed(1)}m)`;
+            }
 
             // Live Gable Posts Offsets Badges
             const frontExpr = document.getElementById('gablePostsFront').value;
@@ -1187,7 +1382,12 @@
                 .map(v => parseInt(v.trim()))
                 .filter(v => !isNaN(v));
 
-            const portalBays = document.getElementById('portalBays').value
+            const portalLeftBays = (document.getElementById('portalLeftBays')?.value || '')
+                .split(/[+,;,\s]+/)
+                .map(v => parseInt(v.trim()))
+                .filter(v => !isNaN(v));
+
+            const portalRightBays = (document.getElementById('portalRightBays')?.value || '')
                 .split(/[+,;,\s]+/)
                 .map(v => parseInt(v.trim()))
                 .filter(v => !isNaN(v));
@@ -1215,7 +1415,9 @@
             }
 
             return {
-                modelName: "Parametric 3D Industrial Shed",
+                modelName: currentMode === 'convert2d' ? "Converted 3D PEB Shed" : "Parametric 3D Industrial Shed",
+                generationMode: currentMode,
+                template2DStdText: current2DStdText,
                 frameType: spans.length > 1 ? 1 : 0,
                 spanMode: spanMode,
                 spans: spans,
@@ -1245,7 +1447,11 @@
                     enablePortalBracing: document.getElementById('portalBracing').checked,
                     portalBracingHeight: parseFloat(document.getElementById('portalHeight').value) || 4.5,
                     portalLegOffset: parseFloat(document.getElementById('portalLegOffset')?.value) || 0.5,
-                    portalBracedBayIndices: portalBays
+                    portalBracedBayIndices: Array.from(new Set([...portalLeftBays, ...portalRightBays])),
+                    portalOnLeftWall: document.getElementById('portalLeftWall')?.checked ?? true,
+                    portalOnRightWall: document.getElementById('portalRightWall')?.checked ?? true,
+                    portalLeftBayIndices: portalLeftBays,
+                    portalRightBayIndices: portalRightBays
                 },
                 mezzanine: {
                     enabled: document.getElementById('mezzanineEnabled').checked,
@@ -1254,6 +1460,40 @@
                     endX: parseFloat(document.getElementById('mezzanineWidth').value) || 10.0,
                     bayIndices: mezzanineBays,
                     joistSpacing: 1.5
+                },
+                canopy: {
+                    leftWall: {
+                        enabled: document.getElementById('canopyLeftEnabled')?.checked ?? false,
+                        height: parseFloat(document.getElementById('canopyLeftHeight')?.value) || 5.0,
+                        projection: parseFloat(document.getElementById('canopyLeftProjection')?.value) || 4.0,
+                        drop: parseFloat(document.getElementById('canopyLeftDrop')?.value) || 0.2,
+                        bayExpression: document.getElementById('canopyLeftBays')?.value || '',
+                        bayIndices: (document.getElementById('canopyLeftBays')?.value || '').split(/[+,;,\s]+/).map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+                    },
+                    rightWall: {
+                        enabled: document.getElementById('canopyRightEnabled')?.checked ?? false,
+                        height: parseFloat(document.getElementById('canopyRightHeight')?.value) || 5.0,
+                        projection: parseFloat(document.getElementById('canopyRightProjection')?.value) || 4.0,
+                        drop: parseFloat(document.getElementById('canopyRightDrop')?.value) || 0.2,
+                        bayExpression: document.getElementById('canopyRightBays')?.value || '',
+                        bayIndices: (document.getElementById('canopyRightBays')?.value || '').split(/[+,;,\s]+/).map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+                    },
+                    frontWall: {
+                        enabled: document.getElementById('canopyFrontEnabled')?.checked ?? false,
+                        height: parseFloat(document.getElementById('canopyFrontHeight')?.value) || 5.0,
+                        projection: parseFloat(document.getElementById('canopyFrontProjection')?.value) || 4.0,
+                        drop: parseFloat(document.getElementById('canopyFrontDrop')?.value) || 0.2,
+                        bayExpression: document.getElementById('canopyFrontBays')?.value || '',
+                        bayIndices: (document.getElementById('canopyFrontBays')?.value || '').split(/[+,;,\s]+/).map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+                    },
+                    rearWall: {
+                        enabled: document.getElementById('canopyRearEnabled')?.checked ?? false,
+                        height: parseFloat(document.getElementById('canopyRearHeight')?.value) || 5.0,
+                        projection: parseFloat(document.getElementById('canopyRearProjection')?.value) || 4.0,
+                        drop: parseFloat(document.getElementById('canopyRearDrop')?.value) || 0.2,
+                        bayExpression: document.getElementById('canopyRearBays')?.value || '',
+                        bayIndices: (document.getElementById('canopyRearBays')?.value || '').split(/[+,;,\s]+/).map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+                    }
                 },
                 jackPortal: {
                     enabled: isJackEnabled,
@@ -1271,6 +1511,12 @@
         function togglePortalBracingUI() {
             const enabled = document.getElementById('portalBracing').checked;
             document.getElementById('portalBracingInputs').style.display = enabled ? 'block' : 'none';
+        }
+
+        function toggleCanopyUI(side) {
+            const enabled = document.getElementById('canopy' + side + 'Enabled')?.checked ?? false;
+            const controls = document.getElementById('canopy' + side + 'Controls');
+            if (controls) controls.style.display = enabled ? 'block' : 'none';
         }
 
         async function updateModel() {
@@ -1485,55 +1731,104 @@
             const totalL = data.stats.totalLength;
             const wallThick = 0.23; // 230mm realistic concrete wall thickness
 
-            if (showRcc && rccH > 0.05) {
-                const wallMat = new THREE.MeshLambertMaterial({
-                    color: 0x4a5568,
-                    transparent: true,
-                    opacity: 0.45,
-                    depthWrite: false
-                });
+            if (totalL > 0.05) {
+                if (showRcc && rccH > 0.05) {
+                    const wallMat = new THREE.MeshLambertMaterial({
+                        color: 0x4a5568,
+                        transparent: true,
+                        opacity: 0.45,
+                        depthWrite: false
+                    });
 
-                const wallEdgeMat = new THREE.LineBasicMaterial({
-                    color: 0x00cec9,
-                    transparent: true,
-                    opacity: 0.60
-                });
+                    const wallEdgeMat = new THREE.LineBasicMaterial({
+                        color: 0x00cec9,
+                        transparent: true,
+                        opacity: 0.60
+                    });
 
-                const addWallBox = (geo, posX, posY, posZ) => {
-                    const mesh = new THREE.Mesh(geo, wallMat);
-                    mesh.position.set(posX, posY, posZ);
-                    rccMeshGroup.add(mesh);
+                    const addWallBox = (geo, posX, posY, posZ) => {
+                        const mesh = new THREE.Mesh(geo, wallMat);
+                        mesh.position.set(posX, posY, posZ);
+                        rccMeshGroup.add(mesh);
 
-                    const edges = new THREE.EdgesGeometry(geo);
-                    const line = new THREE.LineSegments(edges, wallEdgeMat);
-                    line.position.set(posX, posY, posZ);
-                    rccMeshGroup.add(line);
-                };
+                        const edges = new THREE.EdgesGeometry(geo);
+                        const line = new THREE.LineSegments(edges, wallEdgeMat);
+                        line.position.set(posX, posY, posZ);
+                        rccMeshGroup.add(line);
+                    };
 
-                // Left Side Wall (X = 0, length = totalL)
-                addWallBox(new THREE.BoxGeometry(wallThick, rccH, totalL), 0, rccH / 2, totalL / 2);
+                    // Calculate building envelope strictly from base supports (exterior columns) so canopies do not stretch perimeter walls
+                    let minX = 0;
+                    let maxX = totalW;
+                    const baseNodes = data.nodes.filter(n => n.y <= 0.25 || (data.baseNodes && data.baseNodes.includes(n.id)));
+                    if (baseNodes.length > 0) {
+                        minX = Math.min(...baseNodes.map(n => n.x));
+                        maxX = Math.max(...baseNodes.map(n => n.x));
+                    }
+                    const buildingWidth = maxX - minX;
 
-                // Right Side Wall (X = totalW, length = totalL)
-                addWallBox(new THREE.BoxGeometry(wallThick, rccH, totalL), totalW, rccH / 2, totalL / 2);
+                    let minZ = 0;
+                    let maxZ = totalL;
+                    if (data.nodes.length > 0) {
+                        minZ = Math.min(...data.nodes.map(n => n.z));
+                        maxZ = Math.max(...data.nodes.map(n => n.z));
+                    }
+                    const buildingLength = maxZ - minZ;
+                    const centerZ = (minZ + maxZ) / 2;
+                    const centerX = (minX + maxX) / 2;
 
-                // Front Gable Wall (Z = totalL, width = totalW)
-                addWallBox(new THREE.BoxGeometry(totalW, rccH, wallThick), totalW / 2, rccH / 2, totalL);
+                    // Left Side Wall (X = minX, length = buildingLength)
+                    addWallBox(new THREE.BoxGeometry(wallThick, rccH, buildingLength), minX, rccH / 2, centerZ);
 
-                // Rear Gable Wall (Z = 0, width = totalW)
-                addWallBox(new THREE.BoxGeometry(totalW, rccH, wallThick), totalW / 2, rccH / 2, 0);
+                    // Right Side Wall (X = maxX, length = buildingLength)
+                    addWallBox(new THREE.BoxGeometry(wallThick, rccH, buildingLength), maxX, rccH / 2, centerZ);
+
+                    // Front Gable Wall (Z = maxZ, width = buildingWidth)
+                    addWallBox(new THREE.BoxGeometry(buildingWidth, rccH, wallThick), centerX, rccH / 2, maxZ);
+
+                    // Rear Gable Wall (Z = minZ, width = buildingWidth)
+                    addWallBox(new THREE.BoxGeometry(buildingWidth, rccH, wallThick), centerX, rccH / 2, minZ);
+                }
+
+                // Calculate building envelope for badges
+                let bMinX = 0, bMaxX = totalW;
+                const bNodes = data.nodes.filter(n => n.y <= 0.25 || (data.baseNodes && data.baseNodes.includes(n.id)));
+                if (bNodes.length > 0) {
+                    bMinX = Math.min(...bNodes.map(n => n.x));
+                    bMaxX = Math.max(...bNodes.map(n => n.x));
+                }
+                const bCenterX = (bMinX + bMaxX) / 2;
+                let bMinZ = 0, bMaxZ = totalL;
+                if (data.nodes.length > 0) {
+                    bMinZ = Math.min(...data.nodes.map(n => n.z));
+                    bMaxZ = Math.max(...data.nodes.map(n => n.z));
+                }
+                const bCenterZ = (bMinZ + bMaxZ) / 2;
+
+                // 3D Floating Orientation Badges
+                addSceneBadge("Front Gable", new THREE.Vector3(bCenterX, 0.4, bMaxZ + 1.8), "rgba(0, 184, 148, 0.25)", "#00cec9");
+                addSceneBadge("Rear Gable", new THREE.Vector3(bCenterX, 0.4, bMinZ - 1.8), "rgba(116, 185, 255, 0.25)", "#74b9ff");
+                addSceneBadge("Left Wall (X=" + bMinX.toFixed(0) + "m)", new THREE.Vector3(bMinX - 1.8, 0.4, bCenterZ), "rgba(241, 196, 15, 0.25)", "#f1c40f");
+                addSceneBadge("Right Wall (X=" + bMaxX.toFixed(0) + "m)", new THREE.Vector3(bMaxX + 1.8, 0.4, bCenterZ), "rgba(231, 76, 60, 0.25)", "#e74c3c");
+            } else {
+                // Single Mid Frame (at Z = 0)
+                let bCenterX = totalW / 2;
+                const bNodes = data.nodes.filter(n => n.y <= 0.25 || (data.baseNodes && data.baseNodes.includes(n.id)));
+                if (bNodes.length > 0) {
+                    bCenterX = (Math.min(...bNodes.map(n => n.x)) + Math.max(...bNodes.map(n => n.x))) / 2;
+                }
+                addSceneBadge("Single Mid Frame (Z = 0)", new THREE.Vector3(bCenterX, 0.4, 0), "rgba(0, 206, 201, 0.25)", "#00cec9");
             }
-
-            // 3D Floating Orientation Badges
-            addSceneBadge("Front Gable", new THREE.Vector3(totalW / 2, 0.4, totalL + 1.8), "rgba(0, 184, 148, 0.25)", "#00cec9");
-            addSceneBadge("Rear Gable", new THREE.Vector3(totalW / 2, 0.4, -1.8), "rgba(116, 185, 255, 0.25)", "#74b9ff");
-            addSceneBadge("Left Wall (X=0)", new THREE.Vector3(-1.8, 0.4, totalL / 2), "rgba(241, 196, 15, 0.25)", "#f1c40f");
-            addSceneBadge("Right Wall (X=" + totalW.toFixed(0) + "m)", new THREE.Vector3(totalW + 1.8, 0.4, totalL / 2), "rgba(231, 76, 60, 0.25)", "#e74c3c");
         }
 
         function updateStats(stats, config, data) {
             document.getElementById('statNodes').innerText = stats.nodeCount;
             document.getElementById('statBeams').innerText = stats.beamCount;
-            document.getElementById('statFootprint').innerText = `${stats.totalWidth.toFixed(1)}m (X) x ${stats.totalLength.toFixed(1)}m (Z)`;
+            if (stats.totalLength < 0.001) {
+                document.getElementById('statFootprint').innerText = `${stats.totalWidth.toFixed(1)}m (X) x 0.0m (Single Mid Frame)`;
+            } else {
+                document.getElementById('statFootprint').innerText = `${stats.totalWidth.toFixed(1)}m (X) x ${stats.totalLength.toFixed(1)}m (Z)`;
+            }
             const eave = config.spans[0]?.eaveHeightLeft || 0;
             const halfSpan = (config.spans[0]?.spanWidth || 24.0) / 2.0;
             const rise = halfSpan / (config.spans[0]?.roofSlopeRatio || 10.0);
@@ -1550,7 +1845,7 @@
                 'Column', 'IntermediateColumn', 'Rafter', 'EaveStrut', 'RidgeStrut',
                 'RccWallTieBeam', 'GablePost', 'RoofBracing', 'WallBracing', 'CableTrayBracket',
                 'CableTrayRunner', 'MezzanineMainBeam', 'MezzanineSecondaryBeam', 'MezzanineColumn',
-                'PortalBeam', 'PortalKneeBrace'
+                'PortalBeam', 'PortalKneeBrace', 'JackBeam', 'CanopyRafter', 'CanopyRunner', 'CanopyBracing'
             ];
             return types[typeVal] || 'Column';
         }
@@ -1677,6 +1972,15 @@
             document.getElementById('wallBracing').checked = p.bracing.includeWallBracing;
             document.getElementById('maxBraceLength').value = p.bracing.maxBraceLength || 12.5;
             document.getElementById('bracedBays').value = p.bracing.bracedBayIndices.join(', ');
+            if (document.getElementById('portalBracing')) document.getElementById('portalBracing').checked = !!p.bracing.enablePortalBracing;
+            if (document.getElementById('portalHeight')) document.getElementById('portalHeight').value = p.bracing.portalBracingHeight || 4.5;
+            if (document.getElementById('portalLegOffset')) document.getElementById('portalLegOffset').value = p.bracing.portalLegOffset || 0.5;
+            const fallbackBays = (p.bracing.portalBracedBayIndices || []).join(', ');
+            if (document.getElementById('portalLeftWall')) document.getElementById('portalLeftWall').checked = p.bracing.portalOnLeftWall ?? true;
+            if (document.getElementById('portalLeftBays')) document.getElementById('portalLeftBays').value = (p.bracing.portalLeftBayIndices && p.bracing.portalLeftBayIndices.length > 0) ? p.bracing.portalLeftBayIndices.join(', ') : fallbackBays;
+            if (document.getElementById('portalRightWall')) document.getElementById('portalRightWall').checked = p.bracing.portalOnRightWall ?? true;
+            if (document.getElementById('portalRightBays')) document.getElementById('portalRightBays').value = (p.bracing.portalRightBayIndices && p.bracing.portalRightBayIndices.length > 0) ? p.bracing.portalRightBayIndices.join(', ') : fallbackBays;
+            togglePortalBracingUI();
             document.getElementById('mezzanineEnabled').checked = p.mezzanine.enabled;
             document.getElementById('mezzanineHeight').value = p.mezzanine.floorHeight;
             document.getElementById('mezzanineWidth').value = p.mezzanine.endX;
@@ -1816,11 +2120,208 @@
             }, 4000);
         }
 
+        // -------------------------------------------------------------
+        // 2D to 3D Converter Mode & Importer Logic
+        // -------------------------------------------------------------
+        let currentMode = 'parametric'; // 'parametric' or 'convert2d'
+        let current2DStdText = '';
+        let current2DInfo = null;
+
+        const SAMPLE_2D_PEB_STD = `STAAD SPACE
+START JOB INFORMATION
+ENGINEER DATE 03-Sep-26
+JOB NAME 2D Optimized PEB Frame
+END JOB INFORMATION
+INPUT WIDTH 79
+UNIT METER KN
+JOINT COORDINATES
+1 0.0000 0.0000 0.0000;
+2 0.0000 2.2000 0.0000;
+3 0.0000 7.0000 0.0000;
+4 6.0000 7.6000 0.0000;
+5 12.0000 8.2000 0.0000;
+6 18.0000 7.6000 0.0000;
+7 24.0000 7.0000 0.0000;
+8 24.0000 2.2000 0.0000;
+9 24.0000 0.0000 0.0000;
+10 12.0000 0.0000 0.0000;
+MEMBER INCIDENCES
+1 1 2;
+2 2 3;
+3 3 4;
+4 4 5;
+5 5 6;
+6 6 7;
+7 9 8;
+8 8 7;
+9 10 5;
+MEMBER PROPERTY INDIAN
+1 TO 2 7 TO 8 TAPERED 0.40 0.010 0.25 0.012 0.75 0.25 0.012
+3 TO 6 TAPERED 0.75 0.010 0.25 0.012 0.45 0.25 0.012
+9 TABLE ST ISMB350
+SUPPORTS
+1 9 FIXED
+10 PINNED
+PERFORM ANALYSIS
+FINISH`;
+
+        function switchMode(mode) {
+            currentMode = mode;
+            const btnParametric = document.getElementById('btnModeParametric');
+            const btnConvert2D = document.getElementById('btnModeConvert2D');
+            const sectionConvert2D = document.getElementById('sectionConvert2D');
+            const sectionPrimary = document.getElementById('sectionPrimaryDimensions');
+
+            if (mode === 'convert2d') {
+                btnConvert2D.style.background = 'var(--primary)';
+                btnConvert2D.style.color = 'white';
+                btnParametric.style.background = 'transparent';
+                btnParametric.style.color = 'var(--text-muted)';
+                sectionConvert2D.style.display = 'block';
+                if (sectionPrimary) sectionPrimary.style.opacity = '0.5';
+
+                if (!current2DStdText) {
+                    loadSample2DFrame(false);
+                } else {
+                    updateModel();
+                }
+                showToast("🔄 Switched to 2D to 3D Converter Mode", "success");
+            } else {
+                btnParametric.style.background = 'var(--primary)';
+                btnParametric.style.color = 'white';
+                btnConvert2D.style.background = 'transparent';
+                btnConvert2D.style.color = 'var(--text-muted)';
+                sectionConvert2D.style.display = 'none';
+                if (sectionPrimary) sectionPrimary.style.opacity = '1.0';
+                showToast("🏗️ Switched to Parametric Modeler Mode", "success");
+                updateModel();
+            }
+        }
+
+        function openPaste2DModal() {
+            const modal = document.getElementById('modalPaste2D');
+            const textarea = document.getElementById('textareaPaste2D');
+            textarea.value = current2DStdText || SAMPLE_2D_PEB_STD;
+            modal.style.display = 'flex';
+            textarea.focus();
+        }
+
+        function closePaste2DModal() {
+            document.getElementById('modalPaste2D').style.display = 'none';
+        }
+
+        function applyPasted2D() {
+            const text = document.getElementById('textareaPaste2D').value;
+            if (!text || !text.trim()) {
+                showToast("Please enter valid STAAD code", "error");
+                return;
+            }
+            closePaste2DModal();
+            parse2DText(text);
+        }
+
+        function handle2DFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                parse2DText(text);
+                showToast(`📁 Loaded "${file.name}" successfully!`, "success");
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function loadSample2DFrame(showToastMsg = true) {
+            parse2DText(SAMPLE_2D_PEB_STD);
+            if (showToastMsg) {
+                showToast("⚡ Loaded Sample 2D PEB Frame with Tapered Sections", "success");
+            }
+        }
+
+        async function parse2DText(stdText) {
+            try {
+                const res = await fetch('/api/parse-2d', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stdText: stdText })
+                });
+
+                if (!res.ok) {
+                    const errJson = await res.json();
+                    throw new Error(errJson.error || "Failed to parse 2D model");
+                }
+
+                const info = await res.json();
+                current2DInfo = info;
+                current2DStdText = stdText;
+
+                document.getElementById('badge2DLoaded').innerText = `✓ Loaded (${info.nodeCount}N, ${info.beamCount}B)`;
+                document.getElementById('badge2DLoaded').style.background = 'rgba(46, 204, 113, 0.2)';
+                document.getElementById('badge2DLoaded').style.color = '#2ecc71';
+
+                document.getElementById('txt2DFrameName').innerText = info.isTapered ? "PEB Tapered Portal Frame" : "Rolled Steel Portal Frame";
+                document.getElementById('txt2DFrameDetails').innerText = 
+                    `Span: ${info.spanWidth.toFixed(1)}m | Eave: ${info.eaveHeight.toFixed(1)}m | Ridge: ${info.ridgeHeight.toFixed(1)}m (Slope 1:${info.roofSlopeRatio})`;
+
+                const sectionsText = info.detectedSections.length > 0 ? info.detectedSections.join('; ') : "Standard sections";
+                let extraNotes = [];
+                if (info.rccWallHeight !== undefined && info.rccWallHeight > 0) {
+                    extraNotes.push(`🧱 Wall: ${info.rccWallHeight.toFixed(1)}m (1st node)`);
+                }
+                if (info.hasLeftCanopy) {
+                    extraNotes.push(`☂️ Left Canopy @ Y=${info.leftCanopyHeight.toFixed(1)}m`);
+                }
+                if (info.hasRightCanopy) {
+                    extraNotes.push(`☂️ Right Canopy @ Y=${info.rightCanopyHeight.toFixed(1)}m`);
+                }
+
+                document.getElementById('txt2DSections').innerText = extraNotes.length > 0 
+                    ? `Sections: ${sectionsText} | ${extraNotes.join(' | ')}`
+                    : `Sections: ${sectionsText}`;
+
+                // Sync 2D dimensions into UI inputs so badges stay synchronized
+                document.getElementById('spanWidth').value = info.spanWidth;
+                document.getElementById('eaveHeight').value = info.eaveHeight;
+                document.getElementById('roofSlope').value = info.roofSlopeRatio;
+                if (info.rccWallHeight !== undefined && info.rccWallHeight > 0) {
+                    document.getElementById('rccWallHeight').value = info.rccWallHeight;
+                }
+                if (info.widthModuleExpression) {
+                    document.getElementById('widthModules').value = info.widthModuleExpression;
+                }
+
+                updateModel();
+            } catch (err) {
+                showToast("Error parsing 2D file: " + err.message, "error");
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             init3D();
             fetchAndRenderModel();
             initDraggableEditor();
         });
     </script>
+
+    <!-- Paste 2D Modal -->
+    <div id="modalPaste2D" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
+        <div style="background: var(--bg-card); border: 1px solid #00cec9; border-radius: 8px; width: 640px; max-width: 90vw; height: 520px; display: flex; flex-direction: column; padding: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.8);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span style="font-weight: 700; color: #00cec9; font-size: 1.0rem;">📋 Paste 2D STAAD.Pro Command File (.std)</span>
+                <button onclick="closePaste2DModal()" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">✕</button>
+            </div>
+            <p style="font-size: 0.76rem; color: var(--text-muted); margin-bottom: 8px;">
+                Paste your 2D STAAD model commands (JOINT COORDINATES, MEMBER INCIDENCES, MEMBER PROPERTY, SUPPORTS). Tapered & rolled section properties will be preserved.
+            </p>
+            <textarea id="textareaPaste2D" style="flex: 1; background: #0d121c; color: #55efc4; border: 1px solid var(--border); border-radius: 4px; padding: 10px; font-family: monospace; font-size: 0.78rem; resize: none;"></textarea>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+                <button class="btn-outline" onclick="closePaste2DModal()">Cancel</button>
+                <button class="btn-primary" onclick="applyPasted2D()">Import & Extrude to 3D</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

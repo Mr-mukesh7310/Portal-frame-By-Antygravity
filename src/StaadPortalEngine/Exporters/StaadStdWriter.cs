@@ -90,6 +90,9 @@ namespace StaadPortalEngine.Exporters
             var stubIds = model.Beams.Values.Where(b => b.GroupName == "JACK_POST").Select(b => b.Id).ToList();
             if (stubIds.Any()) sb.AppendLine(FormatStaadLineList("_JACKPOSTS", stubIds));
 
+            var canopyBeamIds = model.Beams.Values.Where(b => b.Type == MemberType.CanopyRafter || b.Type == MemberType.CanopyRunner || b.Type == MemberType.CanopyBracing || (b.GroupName != null && b.GroupName.StartsWith("CANOPY"))).Select(b => b.Id).ToList();
+            if (canopyBeamIds.Any()) sb.AppendLine(FormatStaadLineList("_CANOPY", canopyBeamIds));
+
             sb.AppendLine("END GROUP DEFINITION");
 
             // 4. Material Definition
@@ -187,6 +190,52 @@ namespace StaadPortalEngine.Exporters
 
         private static void AssignPropertiesByGroup(StringBuilder sb, GeneratedModel model)
         {
+            if (model.TemplateBeamTo3DBeamMap != null && model.TemplateBeamTo3DBeamMap.Count > 0)
+            {
+                // 1. Assign Preserved 2D Optimized Section Properties to Cloned 3D Frame Members
+                var assignedBeamIds = new HashSet<int>();
+                var propGroups = model.Beams.Values
+                    .Where(b => !string.IsNullOrWhiteSpace(b.SectionProperty))
+                    .GroupBy(b => b.SectionProperty);
+
+                foreach (var group in propGroups)
+                {
+                    var ids = group.Select(b => b.Id).ToList();
+                    sb.AppendLine($"{FormatStaadLineList("", ids)} {group.Key}");
+                    foreach (var id in ids) assignedBeamIds.Add(id);
+                }
+
+                // 2. Assign Standard Properties to Added 3D Members (Struts, Bracing, Gable Posts, Cable Tray, Jack Beams, Portal Bracing)
+                var unassignedStruts = model.Beams.Values.Where(b => (b.Type == MemberType.EaveStrut || b.Type == MemberType.RidgeStrut || b.Type == MemberType.RccWallTieBeam) && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedBrk = model.Beams.Values.Where(b => (b.Type == MemberType.RoofBracing || b.Type == MemberType.WallBracing) && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedGable = model.Beams.Values.Where(b => b.Type == MemberType.GablePost && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedCols = model.Beams.Values.Where(b => (b.Type == MemberType.Column || b.Type == MemberType.IntermediateColumn) && b.GroupName != "JACK_POST" && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedRaf = model.Beams.Values.Where(b => b.Type == MemberType.Rafter && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedCable = model.Beams.Values.Where(b => (b.Type == MemberType.CableTrayBracket || b.Type == MemberType.CableTrayRunner) && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedJack = model.Beams.Values.Where(b => b.Type == MemberType.JackBeam && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedStub = model.Beams.Values.Where(b => b.GroupName == "JACK_POST" && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedPortal = model.Beams.Values.Where(b => b.Type == MemberType.PortalBeam && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedKnee = model.Beams.Values.Where(b => b.Type == MemberType.PortalKneeBrace && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedCanopyRaf = model.Beams.Values.Where(b => (b.Type == MemberType.CanopyRafter || (b.GroupName != null && b.GroupName == "CANOPY_RAFTER")) && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedCanopyRun = model.Beams.Values.Where(b => (b.Type == MemberType.CanopyRunner || (b.GroupName != null && (b.GroupName == "CANOPY_RUNNER" || b.GroupName == "CANOPY_WALL_STRUT"))) && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+                var unassignedCanopyBrk = model.Beams.Values.Where(b => (b.Type == MemberType.CanopyBracing || (b.GroupName != null && b.GroupName == "CANOPY_BRACE")) && !assignedBeamIds.Contains(b.Id)).Select(b => b.Id).ToList();
+
+                if (unassignedCols.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedCols)} TABLE ST ISMB450");
+                if (unassignedRaf.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedRaf)} TABLE ST ISMB400");
+                if (unassignedStruts.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedStruts)} TABLE ST ISMC150");
+                if (unassignedBrk.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedBrk)} TABLE ST ISA65X65X6");
+                if (unassignedGable.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedGable)} TABLE ST ISMB250");
+                if (unassignedCable.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedCable)} TABLE ST ISMC100");
+                if (unassignedJack.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedJack)} TABLE ST ISMB500");
+                if (unassignedStub.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedStub)} ASSIGN COLUMN");
+                if (unassignedPortal.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedPortal)} TABLE ST ISMB350");
+                if (unassignedKnee.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedKnee)} TABLE ST ISMC150");
+                if (unassignedCanopyRaf.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedCanopyRaf)} TABLE ST ISMB200");
+                if (unassignedCanopyRun.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedCanopyRun)} TABLE ST ISMC125");
+                if (unassignedCanopyBrk.Any()) sb.AppendLine($"{FormatStaadLineList("", unassignedCanopyBrk)} TABLE ST ISA50X50X6");
+                return;
+            }
+
             var colBeams = model.Beams.Values.Where(b => (b.Type == MemberType.Column || b.Type == MemberType.IntermediateColumn) && b.GroupName != "JACK_POST").Select(b => b.Id).ToList();
             var stubBeams = model.Beams.Values.Where(b => b.GroupName == "JACK_POST").Select(b => b.Id).ToList();
             var rafBeams = model.Beams.Values.Where(b => b.Type == MemberType.Rafter).Select(b => b.Id).ToList();
@@ -198,6 +247,9 @@ namespace StaadPortalEngine.Exporters
             var portalBeams = model.Beams.Values.Where(b => b.Type == MemberType.PortalBeam).Select(b => b.Id).ToList();
             var kneeBraceBeams = model.Beams.Values.Where(b => b.Type == MemberType.PortalKneeBrace).Select(b => b.Id).ToList();
             var jackBeams = model.Beams.Values.Where(b => b.Type == MemberType.JackBeam).Select(b => b.Id).ToList();
+            var canopyRaf = model.Beams.Values.Where(b => b.Type == MemberType.CanopyRafter || (b.GroupName != null && b.GroupName == "CANOPY_RAFTER")).Select(b => b.Id).ToList();
+            var canopyRun = model.Beams.Values.Where(b => b.Type == MemberType.CanopyRunner || (b.GroupName != null && (b.GroupName == "CANOPY_RUNNER" || b.GroupName == "CANOPY_WALL_STRUT"))).Select(b => b.Id).ToList();
+            var canopyBrk = model.Beams.Values.Where(b => b.Type == MemberType.CanopyBracing || (b.GroupName != null && b.GroupName == "CANOPY_BRACE")).Select(b => b.Id).ToList();
 
             if (colBeams.Any()) sb.AppendLine($"{FormatStaadLineList("", colBeams)} TABLE ST ISMB450");
             if (rafBeams.Any()) sb.AppendLine($"{FormatStaadLineList("", rafBeams)} TABLE ST ISMB400");
@@ -210,6 +262,9 @@ namespace StaadPortalEngine.Exporters
             if (kneeBraceBeams.Any()) sb.AppendLine($"{FormatStaadLineList("", kneeBraceBeams)} TABLE ST ISMC150");
             if (jackBeams.Any()) sb.AppendLine($"{FormatStaadLineList("", jackBeams)} TABLE ST ISMB500");
             if (stubBeams.Any()) sb.AppendLine($"{FormatStaadLineList("", stubBeams)} ASSIGN COLUMN");
+            if (canopyRaf.Any()) sb.AppendLine($"{FormatStaadLineList("", canopyRaf)} TABLE ST ISMB200");
+            if (canopyRun.Any()) sb.AppendLine($"{FormatStaadLineList("", canopyRun)} TABLE ST ISMC125");
+            if (canopyBrk.Any()) sb.AppendLine($"{FormatStaadLineList("", canopyBrk)} TABLE ST ISA50X50X6");
         }
 
         public static List<string> CompressToStaadRanges(IEnumerable<int> ids)
