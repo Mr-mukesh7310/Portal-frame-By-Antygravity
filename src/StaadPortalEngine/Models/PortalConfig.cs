@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using StaadPortalEngine.Helpers;
 
 namespace StaadPortalEngine.Models
 {
@@ -34,7 +35,7 @@ namespace StaadPortalEngine.Models
 
     public class CableTrayConfiguration
     {
-        public bool Enabled { get; set; } = true;
+        public bool Enabled { get; set; } = false;
         public string Location { get; set; } = "side_intermediate"; // "side", "side_intermediate", "all"
         public double BracketHeight { get; set; } = 5.0; // Cable tray height [m]
         public double BracketLength { get; set; } = 0.8; // Cable tray projection [m]
@@ -68,6 +69,30 @@ namespace StaadPortalEngine.Models
         public double PortalBracingHeight { get; set; } = 4.5;
         public double PortalLegOffset { get; set; } = 0.5; // Offset of inner leg at portal beam level [m] (e.g. 0.500m)
         public List<int> PortalBracedBayIndices { get; set; } = new();
+
+        // Left & Right Wall Portal Position & Bay controls
+        public bool PortalOnLeftWall { get; set; } = true;
+        public bool PortalOnRightWall { get; set; } = true;
+        public List<int> PortalLeftBayIndices { get; set; } = new();
+        public List<int> PortalRightBayIndices { get; set; } = new();
+
+        public bool IsPortalBayLeft(int b)
+        {
+            if (!EnablePortalBracing || !PortalOnLeftWall) return false;
+            var bays = (PortalLeftBayIndices != null && PortalLeftBayIndices.Count > 0)
+                ? PortalLeftBayIndices
+                : PortalBracedBayIndices;
+            return bays != null && bays.Contains(b);
+        }
+
+        public bool IsPortalBayRight(int b)
+        {
+            if (!EnablePortalBracing || !PortalOnRightWall) return false;
+            var bays = (PortalRightBayIndices != null && PortalRightBayIndices.Count > 0)
+                ? PortalRightBayIndices
+                : PortalBracedBayIndices;
+            return bays != null && bays.Contains(b);
+        }
     }
 
     public class MezzanineConfiguration
@@ -85,6 +110,42 @@ namespace StaadPortalEngine.Models
         public bool Enabled { get; set; } = false;
         public string IntermediateBaySpacingExpression { get; set; } = "2@12+1@6";
         public List<double> IntermediateBaySpacings { get; set; } = new();
+    }
+
+    public class CanopySideConfiguration
+    {
+        public bool Enabled { get; set; } = false;
+        public double Height { get; set; } = 5.0; // Canopy attachment height [m]
+        public double Projection { get; set; } = 4.0; // Outward projection length [m]
+        public double Drop { get; set; } = 0.2; // Slope drop from column to tip [m]
+        public string BayExpression { get; set; } = ""; // e.g. "1, 2, 3" (empty = all bays)
+        public List<int> BayIndices { get; set; } = new();
+
+        public bool IsInBay(int bayIndex, int totalBays)
+        {
+            if (!Enabled) return false;
+            if (BayIndices != null && BayIndices.Count > 0)
+            {
+                return BayIndices.Contains(bayIndex);
+            }
+            if (!string.IsNullOrWhiteSpace(BayExpression))
+            {
+                var parsed = SpacingParser.ParseBayIndices(BayExpression);
+                if (parsed.Count > 0) return parsed.Contains(bayIndex);
+            }
+            // If empty, applies to all bays
+            return true;
+        }
+    }
+
+    public class CanopyConfiguration
+    {
+        public bool Enabled => (LeftWall?.Enabled ?? false) || (RightWall?.Enabled ?? false) ||
+                               (FrontWall?.Enabled ?? false) || (RearWall?.Enabled ?? false);
+        public CanopySideConfiguration LeftWall { get; set; } = new();
+        public CanopySideConfiguration RightWall { get; set; } = new();
+        public CanopySideConfiguration FrontWall { get; set; } = new();
+        public CanopySideConfiguration RearWall { get; set; } = new();
     }
 
     public class PortalConfiguration
@@ -106,6 +167,12 @@ namespace StaadPortalEngine.Models
         public BracingConfiguration Bracing { get; set; } = new();
         public MezzanineConfiguration Mezzanine { get; set; } = new();
         public JackPortalConfiguration JackPortal { get; set; } = new();
+        public CanopyConfiguration Canopy { get; set; } = new();
+
+        // 2D to 3D Conversion Properties
+        public string GenerationMode { get; set; } = "parametric"; // "parametric" or "convert2d"
+        public string? Template2DStdText { get; set; }
+        public Template2DFrameDefinition? Template2DFrame { get; set; }
 
         public double TotalWidth => Spans?.Sum(s => s.SpanWidth) ?? 0.0;
         public double TotalLength => BaySpacings?.Sum() ?? 0.0;

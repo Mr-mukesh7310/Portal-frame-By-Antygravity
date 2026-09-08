@@ -11,6 +11,7 @@ using StaadPortalEngine.Connectors;
 using StaadPortalEngine.Exporters;
 using StaadPortalEngine.Generators;
 using StaadPortalEngine.Models;
+using StaadPortalEngine.Parsers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,6 +35,11 @@ app.MapPost("/api/generate", (PortalConfiguration config) =>
     var model = geometryBuilder.Build(config);
     var stdText = StaadStdWriter.GenerateStdText(model);
 
+    var baseNodesList = model.Nodes.Values.Where(n => n.Y <= 0.25 || model.BaseNodeIds.Contains(n.Id)).ToList();
+    double totalW = baseNodesList.Count > 0 ? (baseNodesList.Max(n => n.X) - baseNodesList.Min(n => n.X)) : (model.Nodes.Count > 0 ? (model.Nodes.Values.Max(n => n.X) - model.Nodes.Values.Min(n => n.X)) : config.TotalWidth);
+    double totalL = model.Nodes.Count > 0 ? (model.Nodes.Values.Max(n => n.Z) - model.Nodes.Values.Min(n => n.Z)) : config.TotalLength;
+    double maxH = model.Nodes.Count > 0 ? model.Nodes.Values.Max(n => n.Y) : (config.Spans.Count > 0 ? config.Spans[0].RidgeHeight : 7.0);
+
     var response = new
     {
         nodes = model.Nodes.Values,
@@ -48,9 +54,9 @@ app.MapPost("/api/generate", (PortalConfiguration config) =>
         {
             nodeCount = model.Nodes.Count,
             beamCount = model.Beams.Count,
-            totalWidth = config.TotalWidth,
-            totalLength = config.TotalLength,
-            maxHeight = config.Spans.Count > 0 ? config.Spans[0].RidgeHeight : config.Spans[0].EaveHeightLeft,
+            totalWidth = Math.Round(totalW, 2),
+            totalLength = Math.Round(totalL, 2),
+            maxHeight = Math.Round(maxH, 2),
             baseSupports = model.BaseNodeIds.Count,
             fixedSupports = model.FixedBaseNodeIds.Count,
             pinnedSupports = model.PinnedBaseNodeIds.Count,
@@ -60,6 +66,55 @@ app.MapPost("/api/generate", (PortalConfiguration config) =>
     };
 
     return Results.Ok(response);
+});
+
+// API: Parse 2D STAAD Model
+app.MapPost("/api/parse-2d", (Parse2DRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request?.StdText))
+    {
+        return Results.BadRequest(new { error = "STAAD script text is empty." });
+    }
+
+    try
+    {
+        var model = StaadStdParser.Parse(request.StdText);
+        var parameters = StaadStdParser.ExtractParameters(model);
+
+        var sectionProps = model.Beams.Values
+            .Where(b => !string.IsNullOrWhiteSpace(b.SectionProperty))
+            .Select(b => b.SectionProperty)
+            .Distinct()
+            .ToList();
+
+        var response = new
+        {
+            parameters = parameters,
+            nodeCount = model.Nodes.Count,
+            beamCount = model.Beams.Count,
+            spanWidth = parameters.SpanWidth,
+            eaveHeight = parameters.EaveHeight,
+            ridgeHeight = parameters.RidgeHeight,
+            roofSlopeRatio = parameters.RoofSlopeRatio,
+            rccWallHeight = parameters.RccWallHeight,
+            hasLeftCanopy = parameters.HasLeftCanopy,
+            leftCanopyHeight = parameters.LeftCanopyHeight,
+            hasRightCanopy = parameters.HasRightCanopy,
+            rightCanopyHeight = parameters.RightCanopyHeight,
+            intermediateColumnCount = parameters.IntermediateColumnOffsets.Count,
+            widthModuleExpression = parameters.WidthModuleExpression,
+            detectedSections = sectionProps,
+            isTapered = sectionProps.Any(p => p.ToUpperInvariant().Contains("TAPERED")),
+            nodes = model.Nodes.Values,
+            beams = model.Beams.Values
+        };
+
+        return Results.Ok(response);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = $"Failed to parse 2D STAAD file: {ex.Message}" });
+    }
 });
 
 // API 2: Export .std file
@@ -155,3 +210,5 @@ app.MapGet("/api/presets", () =>
 });
 
 app.Run();
+
+public record Parse2DRequest(string StdText);
